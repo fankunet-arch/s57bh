@@ -1,0 +1,72 @@
+<?php
+/**
+ * Toptea HQ - cpsys
+ * API Handler for Product Status Management
+ * Engineer: Gemini | Date: 2025-10-31
+ */
+require_once realpath(__DIR__ . '/../../../core/config.php');
+require_once APP_PATH . '/helpers/kds_helper.php';
+header('Content-Type: application/json; charset=utf-8');
+
+function send_json_response($status, $message, $data = null) { echo json_encode(['status' => $status, 'message' => $message, 'data' => $data]); exit; }
+
+$action = '';
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action'])) { $action = $_GET['action']; }
+elseif ($_SERVER['REQUEST_METHOD'] === 'POST') { $json_data = json_decode(file_get_contents('php://input'), true); if (isset($json_data['action'])) { $action = $json_data['action']; } }
+
+try {
+    switch ($action) {
+        case 'get':
+            $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
+            if (!$id) { send_json_response('error', '无效的ID。'); }
+            $stmt = $pdo->prepare("SELECT * FROM kds_product_statuses WHERE id = ?");
+            $stmt->execute([$id]);
+            $data = $stmt->fetch();
+            if ($data) { send_json_response('success', 'ok', $data); } else { http_response_code(404); send_json_response('error', 'not found'); }
+            break;
+
+        case 'save':
+            $data = $json_data['data'];
+            $id = $data['id'] ? (int)$data['id'] : null;
+            $code = trim($data['status_code']);
+            $name = trim($data['status_name']);
+
+            if (empty($code) || empty($name)) { send_json_response('error', '状态编号和名称均为必填项。'); }
+
+            $stmt_check = $pdo->prepare("SELECT id FROM kds_product_statuses WHERE status_code = ?" . ($id ? " AND id != ?" : ""));
+            $params_check = $id ? [$code, $id] : [$code];
+            $stmt_check->execute($params_check);
+            if ($stmt_check->fetch()) { http_response_code(409); send_json_response('error', '状态编号 "' . htmlspecialchars($code) . '" 已被使用。'); }
+
+            if ($id) {
+                $stmt = $pdo->prepare("UPDATE kds_product_statuses SET status_code = ?, status_name = ? WHERE id = ?");
+                $stmt->execute([$code, $name, $id]);
+                send_json_response('success', '状态已成功更新！');
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO kds_product_statuses (status_code, status_name) VALUES (?, ?)");
+                $stmt->execute([$code, $name]);
+                send_json_response('success', '新状态已成功创建！');
+            }
+            break;
+
+        case 'delete':
+            $id = (int)($json_data['id'] ?? 0);
+            if (!$id) { send_json_response('error', '无效的ID。'); }
+            // Note: Deleting a status might fail if it's referenced by products.
+            // A soft delete or a check for references would be more robust in a production system.
+            $stmt = $pdo->prepare("DELETE FROM kds_product_statuses WHERE id = ?");
+            $stmt->execute([$id]);
+            send_json_response('success', '状态已成功删除。');
+            break;
+
+        default:
+            http_response_code(400); send_json_response('error', '无效的操作请求。');
+    }
+} catch (PDOException $e) {
+    if (strpos($e->getMessage(), 'foreign key constraint fails') !== false) {
+        http_response_code(409); // Conflict
+        send_json_response('error', '删除失败：此状态正在被一个或多个产品使用。');
+    }
+    http_response_code(500);
+    send_json_response('error', '数据库操作失败。', ['debug' => $e->getMessage()]);
+}

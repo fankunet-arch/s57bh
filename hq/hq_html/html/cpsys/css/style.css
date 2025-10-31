@@ -1,0 +1,259 @@
+/**
+ * Toptea HQ - cpsys
+ * Custom Stylesheet
+ * Engineer: Gemini | Date: 2025-10-31 | Revision: 4.0 (Aesthetic Reconstruction)
+ */
+
+:root {
+    --brand-color: #ED7762;
+    --bs-dark-rgb: 33, 37, 41;
+    --bs-body-bg: #212529;
+    --sidebar-bg: #1a1d20;
+    --card-bg: #2c3034;
+}
+
+body {
+    background-color: var(--bs-body-bg);
+}
+
+.sidebar {
+    width: 280px;
+    background-color: var(--sidebar-bg);
+    flex-shrink: 0;
+}
+
+.sidebar .nav-link {
+    color: #adb5bd;
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+}
+
+.sidebar .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar .nav-link.active {
+    color: #fff;
+    background-color: var(--brand-color);
+}
+
+.main-content {
+    min-width: 0;
+}
+
+.breadcrumb-item a {
+    text-decoration: none;
+    color: #adb5bd;
+}
+
+.breadcrumb-item a:hover {
+    color: #fff;
+}
+
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* --- AESTHETIC RECONSTRUCTION based on user feedback --- */
+.card-header {
+    background-color: var(--brand-color); /* Use brand color for headers */
+    border-bottom-color: rgba(0, 0, 0, 0.2);
+    color: white;
+    font-weight: 600;
+}
+
+.btn-primary {
+    --bs-btn-color: #fff;
+    --bs-btn-bg: var(--brand-color);
+    --bs-btn-border-color: var(--brand-color);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #e46a54;
+    --bs-btn-hover-border-color: #d76a56;
+    --bs-btn-active-bg: #c9624f;
+    --bs-btn-active-border-color: #c9624f;
+    --bs-btn-focus-shadow-rgb: 237, 119, 98;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--brand-color);
+    --bs-btn-border-color: var(--brand-color);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: var(--brand-color);
+    --bs-btn-hover-border-color: var(--brand-color);
+}
+
+.btn-outline-info {
+    --bs-btn-color: #0dcaf0;
+    --bs-btn-border-color: #0dcaf0;
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: #0dcaf0;
+    --bs-btn-hover-border-color: #0dcaf0;
+}
+
+/* Special styles for RMS card headers to match the screenshot */
+#product-list-container,
+#product-editor-container .card-header {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#product-editor-container .card .card-header {
+    background-color: var(--brand-color);
+}
+
+/* The main editor's top bar should not have the brand color */
+#product-editor-container > .card > .card-header {
+     background-color: transparent;
+     border-bottom: none;
+}
+/* --- END OF AESTHETIC RECONSTRUCTION --- */
+
+.card-header .nav-tabs {
+    border-bottom: none;
+    margin-bottom: -1px;
+}
+.card-header .nav-tabs .nav-link {
+    color: rgba(255, 255, 255, 0.7);
+    border: none;
+    background: transparent;
+}
+.card-header .nav-tabs .nav-link:hover {
+    color: #fff;
+}
+.card-header .nav-tabs .nav-link.active {
+    background-color: var(--card-bg);
+    color: var(--brand-color);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom-color: var(--card-bg);
+    font-weight: 600;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: var(--brand-color);
+    color: white;
+    box-shadow: none;
+}
+.accordion-button:not(.collapsed)::after {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+}
+
+.recipe-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto;
+    gap: 1rem;
+    align-items: center;
+}
+.recipe-row .form-control, .recipe-row .form-select {
+    min-width: 120px;
+}
+.sortable-ghost {
+    opacity: 0.4;
+    background-color: rgba(237, 119, 98, 0.2);
+    border: 1px dashed var(--brand-color);
+}
+.drag-handle {
+    cursor: grab;
+    color: #6c757d;
+}
+.drag-handle:active {
+    cursor: grabbing;
+}
+select[multiple] {
+    background-color: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    color: var(--bs-body-color);
+    min-height: 120px;
+}
+select[multiple]:focus {
+    border-color: var(--brand-color);
+    box-shadow: 0 0 0 0.25rem rgba(237, 119, 98, 0.25);
+}
+.dynamic-row .form-select.condition-type,
+.dynamic-row .form-select.action-type {
+    max-width: 200px;
+}
+.btn-toggle-nav {
+    padding-left: 1rem;
+}
+.btn-toggle-nav .nav-link {
+    padding: .25rem 1rem;
+    font-size: 0.9rem;
+    color: #adb5bd;
+}
+.btn-toggle-nav .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+.btn-toggle-nav .nav-link.active-child {
+    color: #fff;
+    font-weight: 600;
+}
+.form-control, .form-select {
+    background-color: #1a1d20;
+    color: var(--bs-body-color);
+    border-color: rgba(255,255,255,0.1);
+}
+.form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23dee2e6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+}
+.form-control:focus, .form-select:focus {
+    background-color: #1a1d20;
+    color: var(--bs-body-color);
+    border-color: var(--brand-color);
+    box-shadow: 0 0 0 0.25rem rgba(237, 119, 98, 0.25);
+}
+
+/* RMS UI Color Refresh based on feedback A1.png - V2 */
+
+/* 1. Make secondary card headers a lighter gray */
+#product-editor-container .card-body > .card > .card-header {
+    background-color: #374151; /* A medium-dark gray for secondary sections */
+    color: #e5e7eb;
+}
+
+/* 2. Unify the 4 main action buttons in RMS with a distinct blue color */
+#btn-add-product,
+#product-editor-container form button[type="submit"],
+#btn-add-base-recipe-row,
+#btn-add-adjustment-rule {
+    --bs-btn-color: #FFFFFF;
+    --bs-btn-bg: #0d6efd; /* Bootstrap default blue for clear identification */
+    --bs-btn-border-color: #0d6efd;
+    --bs-btn-hover-color: #FFFFFF;
+    --bs-btn-hover-bg: #0b5ed7; /* A darker blue on hover */
+    --bs-btn-hover-border-color: #0a58ca;
+    --bs-btn-active-color: #FFFFFF;
+    --bs-btn-active-bg: #0a58ca;
+    --bs-btn-active-border-color: #0a53be;
+    
+    /* Remove default outline styles if they exist */
+    --bs-btn-focus-shadow-rgb: none; 
+    box-shadow: none;
+
+    /* Apply the styles directly to override existing .btn-* classes */
+    color: var(--bs-btn-color);
+    background-color: var(--bs-btn-bg);
+    border-color: var(--bs-btn-border-color);
+}
+
+/* Override hover/active states as well */
+#btn-add-product:hover,
+#product-editor-container form button[type="submit"]:hover,
+#btn-add-base-recipe-row:hover,
+#btn-add-adjustment-rule:hover {
+    color: var(--bs-btn-hover-color);
+    background-color: var(--bs-btn-hover-bg);
+    border-color: var(--bs-btn-hover-border-color);
+}
+
+#btn-add-product:active,
+#product-editor-container form button[type="submit"]:active,
+#btn-add-base-recipe-row:active,
+#btn-add-adjustment-rule:active {
+    color: var(--bs-btn-active-color);
+    background-color: var(--bs-btn-active-bg);
+    border-color: var(--bs-btn-active-border-color);
+}
