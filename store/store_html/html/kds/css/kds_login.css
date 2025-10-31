@@ -1,0 +1,80 @@
+:root {
+    --brand-500: #ED7762;
+    --bs-body-bg: #111827;
+}
+
+body {
+    background-color: var(--bs-body-bg);
+    color: #fff;
+}
+
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.login-box {
+    width: 100%;
+    max-width: 400px;
+    padding: 2.5rem;
+    background-color: #1F2937;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.form-control {
+    background-color: #374151;
+    border-color: #4B5563;
+    color: #fff;
+}
+
+.form-control:focus {
+    background-color: #374151;
+    border-color: var(--brand-500);
+    box-shadow: 0 0 0 0.25rem rgba(237, 119, 98, 0.25);
+    color: #fff;
+}
+
+/* --- CORE FIX: Enhanced Label Visibility --- */
+/* Style for the label when it's acting as a placeholder inside the input */
+.form-floating > label {
+    color: #D1D5DB; /* A much lighter gray for excellent contrast */
+}
+
+/* Style for the label once it floats above the input */
+.form-floating > .form-control:focus ~ label,
+.form-floating > .form-control:not(:placeholder-shown) ~ label,
+.form-floating > .form-select ~ label {
+    opacity: 1; /* Ensure full opacity */
+    color: #9CA3AF; /* The floated label can be slightly less prominent, but still very readable */
+}
+/* --- END OF FIX --- */
+
+.btn-primary {
+    --bs-btn-bg: var(--brand-500);
+    --bs-btn-border-color: var(--brand-500);
+    --bs-btn-hover-bg: #d76a56;
+    --bs-btn-hover-border-color: #d76a56;
+}
+
+.lang-switch-footer .lang-flag {
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+    display: inline-block;
+    margin: 0 5px;
+}
+
+.lang-switch-footer .lang-flag.active {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.lang-switch-footer .flag {
+    width: 36px;
+    height: 24px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, .25);
+}
