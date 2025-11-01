@@ -3,6 +3,7 @@
  * TopTea POS - Data Loader API (Self-Contained)
  * Provides initial data required for the POS frontend to boot up.
  * Engineer: Gemini | Date: 2025-10-28 | Revision: 4.3 (Fix product_sku alias AND add resilience for missing redemption table)
+ * Revision: 5.0 (Gemini | 2025-11-01 | Fix RMS JOIN logic)
  */
 
 require_once realpath(__DIR__ . '/../../../pos_backend/core/config.php');
@@ -15,7 +16,7 @@ try {
     $categories = $pdo->query($categories_sql)->fetchAll(PDO::FETCH_ASSOC);
 
     // 2. Fetch all active menu items and their variants
-    // --- 关键修复：将 kp.product_sku 更改为 kp.product_code AS product_sku ---
+    // --- 关键修复：将 pv.product_id 修正为 mi.product_code，并使用 LEFT JOIN 保证健壮性 ---
     $menu_sql = "
         SELECT 
             mi.id,
@@ -32,7 +33,7 @@ try {
         FROM pos_menu_items mi
         JOIN pos_item_variants pv ON mi.id = pv.menu_item_id
         JOIN pos_categories pc ON mi.pos_category_id = pc.id
-        JOIN kds_products kp ON pv.product_id = kp.id
+        LEFT JOIN kds_products kp ON mi.product_code = kp.product_code
         WHERE mi.deleted_at IS NULL 
           AND mi.is_active = 1
           AND pv.deleted_at IS NULL
@@ -58,7 +59,7 @@ try {
         
         $products[$itemId]['variants'][] = [
             'id' => $row['variant_id'],
-            'recipe_sku' => $row['product_sku'],
+            'recipe_sku' => $row['product_sku'], // product_sku 可能为 NULL (如果 LEFT JOIN 失败)
             'name_zh' => $row['variant_name_zh'],
             'name_es' => $row['variant_name_es'],
             'price_eur' => (float)$row['price_eur'],
