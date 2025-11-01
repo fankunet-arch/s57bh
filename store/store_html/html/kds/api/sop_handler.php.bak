@@ -1,0 +1,222 @@
+<?php
+/**
+ * TopTea · KDS · SOP 查询接口（安全自包含版）
+ * 目的：修复 500（路径/依赖问题），保持前端所需返回结构。
+ * - 仅两种返回：type=base_info（只输入 P）/ type=adjusted_recipe（输入 P-A-M-T）
+ */
+
+declare(strict_types=1);
+header('Content-Type: application/json; charset=utf-8');
+
+/* ========= 通用输出 ========= */
+function _out(string $s, string $m, $d=null, int $code=200){
+  http_response_code($code);
+  echo json_encode(['status'=>$s,'message'=>$m,'data'=>$d], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+function _ok($d){ _out('success','OK',$d,200); }
+
+/* ========= 加载配置（关键路径修复） ========= */
+/**
+ * 位置：/store_html/html/kds/api/sop_handler.php
+ * 真实配置：/store_html/kds/core/config.php   ← 不在 html 目录下
+ */
+$__html_root   = dirname(__DIR__, 2);                 // /.../store_html/html
+$__config_path = realpath($__html_root . '/../kds/core/config.php');
+if (!$__config_path || !file_exists($__config_path)) {
+  _out('error','配置文件未找到', ['expected'=>$__html_root . '/../kds/core/config.php'], 500);
+}
+require_once $__config_path; // 应定义 $pdo
+
+if (!isset($pdo) || !($pdo instanceof PDO)) {
+  _out('error','数据库连接失败。', null, 500);
+}
+
+/* ========= 内部小工具 ========= */
+function parse_code(string $raw): ?array {
+  $raw = strtoupper(trim($raw));
+  if ($raw === '' || !preg_match('/^[A-Z0-9-]+$/', $raw)) return null;
+  $seg = array_values(array_filter(explode('-', $raw), fn($s)=>$s!==''));
+  if (count($seg) > 4) return null; // P / P-A / P-A-M / P-A-M-T
+  return ['p'=>$seg[0]??'', 'a'=>$seg[1]??null, 'm'=>$seg[2]??null, 't'=>$seg[3]??null, 'raw'=>$raw];
+}
+
+function fetch_product(PDO $pdo, string $p): ?array {
+  $sql = "SELECT id, product_code, status_id, is_active, is_deleted_flag
+          FROM kds_products WHERE product_code=? LIMIT 1";
+  $st = $pdo->prepare($sql);
+  $st->execute([$p]);
+  $r = $st->fetch(PDO::FETCH_ASSOC);
+  return $r ?: null;
+}
+
+function fetch_product_names(PDO $pdo, int $pid): array {
+  $sql = "SELECT language_code, product_name FROM kds_product_translations WHERE product_id=?";
+  $st  = $pdo->prepare($sql); $st->execute([$pid]);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $out = ['title_zh'=>null,'title_es'=>null];
+  foreach ($rows as $r) {
+    if ($r['language_code']==='zh-CN') $out['title_zh'] = $r['product_name'];
+    if ($r['language_code']==='es-ES') $out['title_es'] = $r['product_name'];
+  }
+  return $out;
+}
+
+function fetch_status_text(PDO $pdo, int $status_id): array {
+  $sql = "SELECT status_code, status_name_zh, status_name_es FROM kds_product_statuses WHERE id=?";
+  $st  = $pdo->prepare($sql); $st->execute([$status_id]);
+  $r = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+  return $r ? [
+    'status_code'   => (int)$r['status_code'],
+    'status_name_zh'=> $r['status_name_zh'],
+    'status_name_es'=> $r['status_name_es'],
+  ] : ['status_code'=>0,'status_name_zh'=>null,'status_name_es'=>null];
+}
+
+function fetch_base_recipe(PDO $pdo, int $pid): array {
+  $sql = "SELECT r.material_id, r.unit_id, r.quantity, r.step_category,
+                 mt_zh.material_name AS material_name_zh,
+                 mt_es.material_name AS material_name_es,
+                 u.unit_code
+          FROM kds_product_recipes r
+          LEFT JOIN kds_material_translations mt_zh
+                 ON mt_zh.material_id=r.material_id AND mt_zh.language_code='zh-CN'
+          LEFT JOIN kds_material_translations mt_es
+                 ON mt_es.material_id=r.material_id AND mt_es.language_code='es-ES'
+          LEFT JOIN kds_units u ON u.id=r.unit_id
+          WHERE r.product_id=?
+          ORDER BY r.step_category, r.sort_order, r.id";
+  $st = $pdo->prepare($sql); $st->execute([$pid]);
+  $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $out = [];
+  foreach ($rows as $r) {
+    $out[] = [
+      'material_id'      => (int)$r['material_id'],
+      'material_name_zh' => $r['material_name_zh'] ?? null,
+      'material_name_es' => $r['material_name_es'] ?? null,
+      'unit_id'          => (int)$r['unit_id'],
+      'unit_code'        => isset($r['unit_code']) ? (int)$r['unit_code'] : null,
+      'quantity'         => is_null($r['quantity']) ? null : (float)$r['quantity'],
+      'step_category'    => $r['step_category'],
+    ];
+  }
+  return $out;
+}
+
+function fetch_cup_options(PDO $pdo): array {
+  $sql = "SELECT cup_code, cup_name, sop_description_es FROM kds_cups WHERE deleted_at IS NULL ORDER BY id";
+  $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $out = [];
+  foreach ($rows as $r) {
+    $out[] = [
+      'cup_code'   => (int)$r['cup_code'],
+      'name_zh'    => $r['cup_name'],              // 目前只有一个名称列，先当中文
+      'name_es'    => $r['sop_description_es']     // 若以后有独立西语名再替换
+    ];
+  }
+  return $out;
+}
+
+function fetch_ice_options(PDO $pdo, ?int $pid=null): array {
+  $sql = "SELECT io.id, io.ice_code,
+                 t1.ice_option_name AS name_zh,
+                 t2.ice_option_name AS name_es,
+                 t1.sop_description AS desc_zh,
+                 t2.sop_description AS desc_es
+          FROM kds_ice_options io
+          LEFT JOIN kds_ice_option_translations t1
+                 ON t1.ice_option_id=io.id AND t1.language_code='zh-CN'
+          LEFT JOIN kds_ice_option_translations t2
+                 ON t2.ice_option_id=io.id AND t2.language_code='es-ES'
+          WHERE io.deleted_at IS NULL
+          ORDER BY io.ice_code";
+  $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $out = [];
+  foreach ($rows as $r) {
+    $out[] = [
+      'ice_code' => (int)$r['ice_code'],
+      'name_zh'  => $r['name_zh'],
+      'name_es'  => $r['name_es'],
+      'desc_zh'  => $r['desc_zh'],
+      'desc_es'  => $r['desc_es'],
+    ];
+  }
+  return $out;
+}
+
+function fetch_sweetness_options(PDO $pdo, ?int $pid=null): array {
+  $sql = "SELECT so.id, so.sweetness_code,
+                 t1.sweetness_option_name AS name_zh,
+                 t2.sweetness_option_name AS name_es,
+                 t1.sop_description AS desc_zh,
+                 t2.sop_description AS desc_es
+          FROM kds_sweetness_options so
+          LEFT JOIN kds_sweetness_option_translations t1
+                 ON t1.sweetness_option_id=so.id AND t1.language_code='zh-CN'
+          LEFT JOIN kds_sweetness_option_translations t2
+                 ON t2.sweetness_option_id=so.id AND t2.language_code='es-ES'
+          WHERE so.deleted_at IS NULL
+          ORDER BY so.sweetness_code";
+  $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+  $out = [];
+  foreach ($rows as $r) {
+    $out[] = [
+      'sweetness_code' => (int)$r['sweetness_code'],
+      'name_zh'        => $r['name_zh'],
+      'name_es'        => $r['name_es'],
+      'desc_zh'        => $r['desc_zh'],
+      'desc_es'        => $r['desc_es'],
+    ];
+  }
+  return $out;
+}
+
+/* ========= 主流程 ========= */
+try {
+  $raw = $_GET['code'] ?? '';
+  $seg = parse_code($raw);
+  if (!$seg || $seg['p']==='') _out('error','编码不合法', null, 400);
+
+  // 1) 产品校验
+  $prod = fetch_product($pdo, $seg['p']);
+  if (!$prod || (int)$prod['is_deleted_flag'] !== 0 || (int)$prod['is_active'] !== 1) {
+    _out('error','找不到该产品或未上架', null, 404);
+  }
+  $pid = (int)$prod['id'];
+
+  // 2) 基础信息 & 基础配方
+  $names = fetch_product_names($pdo, $pid);
+  $status= fetch_status_text($pdo, (int)$prod['status_id']);
+  $product_info = array_merge([
+      'product_id'   => $pid,
+      'product_code' => $prod['product_code'],
+  ], $names, $status);
+
+  $recipe = fetch_base_recipe($pdo, $pid);
+
+  // 仅 P 段：返回基础信息 + 选项 + 基础配方
+  if ($seg['a']===null && $seg['m']===null && $seg['t']===null) {
+    $options = [
+      'cups'               => fetch_cup_options($pdo),
+      'ice_options'        => fetch_ice_options($pdo, $pid),
+      'sweetness_options'  => fetch_sweetness_options($pdo, $pid),
+    ];
+    _ok([
+      'type'    => 'base_info',
+      'product' => $product_info,
+      'recipe'  => $recipe,
+      'options' => $options,
+    ]);
+  }
+
+  // 带 A/M/T：暂时返回“未调整”的配方（以后可引入规则计算）
+  _ok([
+    'type'    => 'adjusted_recipe',
+    'product' => $product_info,
+    'recipe'  => $recipe
+  ]);
+
+} catch (Throwable $e) {
+  error_log('KDS sop_handler error: '.$e->getMessage());
+  _out('error','服务器错误', ['debug'=>$e->getMessage()], 500);
+}

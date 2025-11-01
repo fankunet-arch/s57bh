@@ -1,143 +1,114 @@
-/* TopTea · KDS — SOP 查询绑定（最小接线版）
- * 不改动页面结构；只给你现有输入框/按钮绑定事件并渲染结果。
- * 兼容 P 与 P-A-M-T。需要 jQuery（你已在系统中使用）。
- * 2025-10-31
+/* TopTea · KDS — SOP 兜底绑定器（与主脚本同风格渲染）
+ * 仅当页面还加载本文件时，提供与 kds_sop.js 一致的 UI 行为与渲染。
  */
 (function () {
-  if (window.__KDS_SOP_BOUND__) return; // 防重复绑定
-  window.__KDS_SOP_BOUND__ = true;
+  if (window.__KDS_SOP_FALLBACK__) return;
+  window.__KDS_SOP_FALLBACK__ = true;
 
-  function apiUrl() {
-    var path = location.pathname;             // 例如 /kds/index.php 或 /kds/
-    var base = path.replace(/\/index\.php.*$/i, '');
-    if (!base || base === path) base = path.replace(/\/[^\/]+$/,'');
-    if (!base.endsWith('/')) base += '/';
-    return base + 'api/sop_handler.php';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+  function lg(){const l=(document.documentElement.getAttribute('lang')||'').toLowerCase();return l.startsWith('es')?'es':'zh';}
+  function pick(zh,es){return lg()==='es'?(es||zh):(zh||es);}
+
+  const $input = $("#sku-input, #kds_code_input").first();
+  const $form  = $("#sku-search-form");
+
+  const $tip   = $("#kds-step-tip, .sop-tip, [data-role='sop-tip']").first()
+                 .text(lg()==='es'?'Haz bien cada paso: mejoran la textura y la calidad.':'每步动作做到位，口感品质才会好。');
+
+  const $codeTargets = $("#kds_code_big, #kds_product_code, .kds-sku-big, [data-role='product-code']");
+  const $nameTargets = $("#kds_product_title, #kds_product_name, .kds-name-big, [data-role='product-name']");
+
+  const $line1 = $("#kds_line1, .kds-line1, #kds_overview_line1").first();
+  const $line2 = $("#kds_line2, .kds-line2, #kds_overview_line2").first();
+
+  const $wrapBase = $("#cards-base"), $wrapMix = $("#cards-mixing"), $wrapTop = $("#cards-topping");
+  const $waiting = $("#cards-waiting");
+
+  const $tabBase = $("#tab-base, .kds-step-tab[data-step='base']").first();
+  const $tabMix  = $("#tab-mixing, .kds-step-tab[data-step='mixing']").first();
+  const $tabTop  = $("#tab-topping, .kds-step-tab[data-step='topping']").first();
+
+  function normalizeCat(cat){
+    const s=String(cat||'').toLowerCase();
+    if(s.startsWith('mix')||s.includes('调')) return 'mixing';
+    if(s.startsWith('top')||s.includes('顶')) return 'topping';
+    return 'base';
   }
-
-  // 仅“寻找”现有输入控件，不创建新的
-  function pickInput() {
-    var $ipt = $('#kds_code:visible').first();                           // 1) 约定ID（若存在）
-    if ($ipt.length) return $ipt;
-    $ipt = $('input[placeholder*="产品编码"],input[placeholder*="编码"],input[type="search"]').filter(':visible').first(); // 2) 通过占位/类型兜底
-    return $ipt.length ? $ipt : $();
+  function card(i,n,q,u){
+    return `
+    <div class="col-xxl-6 col-xl-6 col-lg-12 col-md-12">
+      <div class="kds-ingredient-card">
+        <div class="step-number" style="position:absolute;left:16px;top:16px;background:#16a34a;color:#fff;width:28px;height:28px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:900;">${i}</div>
+        <div class="kds-card-thumb" style="width:140px;height:140px;background:#6b7280;border-radius:.8rem;margin:56px auto 8px auto;"></div>
+        <div class="text-center" style="font-size:1.6rem;font-weight:900;letter-spacing:.6px;">${esc(n)}</div>
+        <div class="kds-quantity text-center">${esc(q)}</div>
+        <div class="kds-unit-measure text-center">${esc(u)}</div>
+      </div>
+    </div>`;
   }
-  function pickSearchButton($ipt) {
-    if ($ipt && $ipt.length) {
-      var $btn = $ipt.closest('.input-group,form,.row').find('button:visible,i.bi-search').first();
-      if ($btn.length) return $btn.closest('button');
-    }
-    return $('.btn-search:visible, button[data-kds-action="query"]:visible').first();
+  function showTab(step){
+    $(".kds-step-tab").removeClass("active");
+    $(`.kds-step-tab[data-step='${step}']`).addClass("active");
+    $wrapBase.addClass("d-none"); $wrapMix.addClass("d-none"); $wrapTop.addClass("d-none");
+    if(step==='base') $wrapBase.removeClass("d-none");
+    if(step==='mixing') $wrapMix.removeClass("d-none");
+    if(step==='topping') $wrapTop.removeClass("d-none");
   }
-
-  // 合法化输入：支持 P / P-A / P-A-M / P-A-M-T
-  function normalize(raw) {
-    if (!raw) return '';
-    raw = (''+raw).trim().toUpperCase();
-    if (!/^[A-Z0-9-]+$/.test(raw)) return '';
-    var seg = raw.split('-').filter(Boolean);
-    if (seg.length > 4) return '';
-    return seg.join('-');
-  }
-
-  // 若页面已有容器（比如 #list-base/#list-mix/#list-top），就用它；否则轻量创建一个，不影响布局
-  function ensureResultHost() {
-    if ($('#list-base').length && $('#list-mix').length && $('#list-top').length) return;
-    if ($('#kds_sop_tabs').length) return;
-
-    var html =
-      '<div id="kds_sop_tabs" class="mt-2">' +
-      '  <ul class="nav nav-tabs" role="tablist">' +
-      '    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#pane-base"  type="button" role="tab">底料</button></li>' +
-      '    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#pane-mix"   type="button" role="tab">调杯</button></li>' +
-      '    <li class="nav-item"><button class="nav-link"        data-bs-toggle="tab" data-bs-target="#pane-top"   type="button" role="tab">顶料</button></li>' +
-      '  </ul>' +
-      '  <div class="tab-content border rounded-bottom p-3" style="min-height:120px;">' +
-      '    <div class="tab-pane fade show active" id="pane-base" role="tabpanel"><ul id="list-base" class="list-group list-group-flush"></ul></div>' +
-      '    <div class="tab-pane fade"               id="pane-mix"  role="tabpanel"><ul id="list-mix"  class="list-group list-group-flush"></ul></div>' +
-      '    <div class="tab-pane fade"               id="pane-top"  role="tabpanel"><ul id="list-top"  class="list-group list-group-flush"></ul></div>' +
-      '  </div>' +
-      '  <div id="kds_sop_hint" class="text-muted small mt-2">请输入产品编码进行查询（例：101 或 101-1-1-11）。</div>' +
-      '</div>';
-
-    var $host = $('.kds-center:visible, .content:visible, .container:visible, main:visible').first();
-    if ($host.length) $host.prepend(html); else $('body').append(html);
-  }
-
-  function setWaiting(msg){ $('#list-base,#list-mix,#list-top').empty(); $('#kds_sop_hint').text(msg||'正在查询…'); }
-  function setMsg(type,msg){ $('#list-base,#list-mix,#list-top').empty(); $('#kds_sop_hint').text(msg|| (type==='error'?'查询失败':'')); }
-
-  // 通用化 payload：兼容 adjusted_recipe / steps / steps_json_zh 三种
-  function normPayload(data){
-    if (!data) return {base:[],mix:[],top:[]};
-    if (data.adjusted_recipe) return Object.assign({base:[],mix:[],top:[]}, data.adjusted_recipe);
-    if (data.steps)          return Object.assign({base:[],mix:[],top:[]}, data.steps);
-    if (data.base || data.mix || data.top) return Object.assign({base:[],mix:[],top:[]}, data);
-    if (data.steps_json_zh) {
-      try{ return Object.assign({base:[],mix:[],top:[]}, JSON.parse(data.steps_json_zh)); }catch(e){}
-    }
-    return {base:[],mix:[data],top:[]};
-  }
-
-  function renderList($ul,items){
-    $ul.empty();
-    if (!items || !items.length){ $ul.append('<li class="list-group-item text-muted">（无）</li>'); return; }
-    items.forEach(function(it){
-      if (typeof it === 'string') { $ul.append('<li class="list-group-item">'+it+'</li>'); return; }
-      var name = it.material_name || it.name || it.label || '未命名';
-      var qty  = (it.qty!=null?it.qty:it.quantity);
-      var unit = it.unit || '';
-      var right = [];
-      if (qty!=null) right.push(qty+(unit?unit:''));
-      $ul.append('<li class="list-group-item d-flex justify-content-between"><span>'+name+'</span><small class="text-muted">'+right.join(' · ')+'</small></li>');
+  function bindTabs(){
+    if($tabBase.length&&!$tabBase.data('step')) $tabBase.attr('data-step','base').addClass('kds-step-tab');
+    if($tabMix.length &&!$tabMix.data('step'))  $tabMix.attr('data-step','mixing').addClass('kds-step-tab');
+    if($tabTop.length &&!$tabTop.data('step'))  $tabTop.attr('data-step','topping').addClass('kds-step-tab');
+    $(document).off('click.kdsStep','.kds-step-tab').on('click.kdsStep','.kds-step-tab',function(e){
+      e.preventDefault(); showTab($(this).data('step'));
     });
   }
+
   function render(data){
-    ensureResultHost();
-    var s = normPayload(data);
-    renderList($('#list-base'), s.base);
-    renderList($('#list-mix'),  s.mix);
-    renderList($('#list-top'),  s.top);
-    $('#kds_sop_hint').text('完成。');
+    const p=data.product||{}, arr=data.recipe||[];
+    if($codeTargets.length && p.product_code) $codeTargets.text(p.product_code);
+    if($nameTargets.length) $nameTargets.text(pick(p.name_zh,p.name_es)||pick(p.title_zh,p.title_es)||'');
+
+    const status=pick(p.status_name_zh,p.status_name_es)||'';
+    if($line1.length){ if(status){$line1.text(status).show();}else{$line1.hide();} }
+    const ice=pick(p.ice_name_zh,p.ice_name_es)||'', swt=pick(p.sweetness_name_zh,p.sweetness_name_es)||'';
+    const parts=[]; if(ice)parts.push(ice); if(swt)parts.push(swt);
+    if($line2.length){ if(parts.length){$line2.text(parts.join(' / ')).show();}else{$line2.hide();} }
+
+    $wrapBase.empty(); $wrapMix.empty(); $wrapTop.empty();
+    const isEs = lg()==='es';
+    const gp={base:[],mixing:[],topping:[]};
+    arr.forEach(r=>gp[normalizeCat(r.step_category)].push(r));
+
+    let i=1; gp.base.forEach(r=>{$wrapBase.append(card(i++, isEs?(r.material_es||r.material_zh||'--'):(r.material_zh||r.material_es||'--'), String(r.quantity??''), isEs?(r.unit_es||r.unit_zh||''):(r.unit_zh||r.unit_es||'')));});
+    i=1; gp.mixing.forEach(r=>{$wrapMix.append(card(i++, isEs?(r.material_es||r.material_zh||'--'):(r.material_zh||r.material_es||'--'), String(r.quantity??''), isEs?(r.unit_es||r.unit_zh||''):(r.unit_zh||r.unit_es||'')));});
+    i=1; gp.topping.forEach(r=>{$wrapTop.append(card(i++, isEs?(r.material_es||r.material_zh||'--'):(r.material_zh||r.material_es||'--'), String(r.quantity??''), isEs?(r.unit_es||r.unit_zh||''):(r.unit_zh||r.unit_es||'')));});
+
+    if(gp.base.length) showTab('base'); else if(gp.mixing.length) showTab('mixing'); else if(gp.topping.length) showTab('topping'); else showTab('base');
   }
 
-  function query(codeRaw){
-    var code = normalize(codeRaw);
-    if (!code){ setMsg('error','请输入合法编码（示例：101 或 101-1-1-11）'); return; }
-    ensureResultHost();
-    setWaiting('正在查询：'+code+' …');
-    $.ajax({
-      url: apiUrl(),
-      method: 'GET',
-      dataType: 'json',
-      cache: false,
-      data: { code: code },
-      success: function(resp){
-        if (resp && resp.status === 'success' && resp.data){ render(resp.data); }
-        else { setMsg('error', (resp && resp.message) || '查询失败'); }
-      },
-      error: function(xhr){
-        var msg='网络/服务器错误';
-        if (xhr && xhr.responseText){
-          try{ var j=JSON.parse(xhr.responseText); if (j && j.message) msg=j.message; }catch(e){}
-        }
-        setMsg('error', msg);
-      }
+  function fetchSOP(code){
+    if(!code) return;
+    if($waiting.length) $waiting.text(lg()==='es'?'Esperando consulta…':'等待查询…').show();
+    $.getJSON('api/sop_handler.php', {code: code}).done(function(res){
+      if(!res || res.status!=='success' || !res.data){ alert(lg()==='es'?'Error del servidor':'查询失败：服务器错误'); return; }
+      if($waiting.length) $waiting.hide();
+      render({product:res.data.product||{}, recipe:res.data.recipe||[]});
+    }).fail(function(){ alert(lg()==='es'?'Error del servidor':'查询失败：服务器错误'); });
+  }
+
+  bindTabs();
+
+  if($form.length){
+    $form.on('submit', function(e){
+      e.preventDefault(); const code=($input.val()||'').trim(); if(code) fetchSOP(code);
     });
   }
-
-  function bind(){
-    var $ipt = pickInput();
-    var $btn = pickSearchButton($ipt);
-    if ($ipt.length){
-      $ipt.on('keydown.kds-sop', function(e){
-        if (e.key === 'Enter'){ e.preventDefault(); query($ipt.val()); }
-      });
-    }
-    if ($btn.length){
-      $btn.on('click.kds-sop', function(){ query($ipt.val()); });
-    }
+  if($input.length){
+    $input.on('keydown', function(e){
+      if(e.key==='Enter'){ e.preventDefault(); const code=($input.val()||'').trim(); if(code) fetchSOP(code); }
+    });
   }
-
-  $(bind);
+  if($input.length && ($input.val()||'').trim()){
+    fetchSOP(($input.val()||'').trim());
+  }
 })();
