@@ -16,13 +16,14 @@
                         <th>自定义编号</th>
                         <th>杯型名称</th>
                         <th>操作说明 (中)</th>
+                        <th>操作说明 (西)</th>
                         <th class="text-end">操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($cups)): ?>
                         <tr>
-                            <td colspan="4" class="text-center">暂无杯型数据。</td>
+                            <td colspan="5" class="text-center">暂无杯型数据。</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($cups as $cup): ?>
@@ -30,6 +31,7 @@
                                 <td><strong><?php echo htmlspecialchars($cup['cup_code']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($cup['cup_name']); ?></td>
                                 <td><?php echo htmlspecialchars($cup['sop_description_zh'] ?? '未定义'); ?></td>
+                                <td><?php echo htmlspecialchars($cup['sop_description_es'] ?? '未定义'); ?></td>
                                 <td class="text-end">
                                     <button class="btn btn-sm btn-outline-primary edit-cup-btn" 
                                             data-cup-id="<?php echo $cup['id']; ?>"

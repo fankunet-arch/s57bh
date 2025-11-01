@@ -2,7 +2,7 @@
 /**
  * Toptea HQ - cpsys
  * API Handler for Product Status Management
- * Engineer: Gemini | Date: 2025-10-31
+ * Engineer: Gemini | Date: 2025-11-01 | Revision: 1.2 (Fix GET query to respect soft delete)
  */
 require_once realpath(__DIR__ . '/../../../core/config.php');
 require_once APP_PATH . '/helpers/kds_helper.php';
@@ -19,9 +19,10 @@ try {
         case 'get':
             $id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
             if (!$id) { send_json_response('error', '无效的ID。'); }
-            $stmt = $pdo->prepare("SELECT id, status_code, status_name_zh, status_name_es FROM kds_product_statuses WHERE id = ?");
+            // FIX: Added 'AND deleted_at IS NULL' to prevent fetching soft-deleted items
+            $stmt = $pdo->prepare("SELECT id, status_code, status_name_zh, status_name_es FROM kds_product_statuses WHERE id = ? AND deleted_at IS NULL");
             $stmt->execute([$id]);
-            $data = $stmt->fetch();
+            $data = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($data) { send_json_response('success', 'ok', $data); } else { http_response_code(404); send_json_response('error', 'not found'); }
             break;
 
@@ -72,7 +73,8 @@ try {
             http_response_code(400); send_json_response('error', '无效的操作请求。');
     }
 } catch (PDOException $e) {
-    if (strpos($e->getMessage(), 'foreign key constraint fails') !== false) {
+    // FIX A3: 使用 SQLSTATE '23000' (Integrity Constraint Violation) 来捕获所有外键约束失败
+    if ($e->getCode() == '23000') {
         http_response_code(409); // Conflict
         send_json_response('error', '删除失败：此状态正在被一个或多个产品使用。');
     }
