@@ -559,3 +559,4 @@ function getMemberById(PDO $pdo, int $id): ?array {
     $result = $stmt->fetch(PDO::FETCH_ASSOC);
     return $result ?: null;
 }
+}

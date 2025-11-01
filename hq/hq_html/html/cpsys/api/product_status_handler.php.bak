@@ -87,3 +87,4 @@ try {
     send_json_response('error', '服务器内部错误，请联系管理员。', ['debug' => $e->getMessage()]);
     // --- END: CRITICAL FIX FOR A2.png ---
 }
+}
