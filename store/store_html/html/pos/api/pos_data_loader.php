@@ -2,7 +2,7 @@
 /**
  * TopTea POS - Data Loader API (Self-Contained)
  * Provides initial data required for the POS frontend to boot up.
- * Engineer: Gemini | Date: 2025-10-28 | Revision: 4.0 (Include Redemption Rules)
+ * Engineer: Gemini | Date: 2025-10-28 | Revision: 4.3 (Fix product_sku alias AND add resilience for missing redemption table)
  */
 
 require_once realpath(__DIR__ . '/../../../pos_backend/core/config.php');
@@ -15,6 +15,7 @@ try {
     $categories = $pdo->query($categories_sql)->fetchAll(PDO::FETCH_ASSOC);
 
     // 2. Fetch all active menu items and their variants
+    // --- 关键修复：将 kp.product_sku 更改为 kp.product_code AS product_sku ---
     $menu_sql = "
         SELECT 
             mi.id,
@@ -27,7 +28,7 @@ try {
             pv.variant_name_es,
             pv.price_eur,
             pv.is_default,
-            kp.product_sku
+            kp.product_code AS product_sku
         FROM pos_menu_items mi
         JOIN pos_item_variants pv ON mi.id = pv.menu_item_id
         JOIN pos_categories pc ON mi.pos_category_id = pc.id
@@ -71,26 +72,36 @@ try {
         ['key' => 'pudding', 'label_zh' => '布丁', 'label_es' => 'Pudin', 'price_eur' => 0.7],
     ];
 
-    // --- 核心修复：加载所有可用的积分兑换规则 ---
-    $rules_sql = "
-        SELECT id, rule_name_zh, rule_name_es, points_required, reward_type, reward_value_decimal, reward_promo_id
-        FROM pos_point_redemption_rules
-        WHERE is_active = 1 AND deleted_at IS NULL
-        ORDER BY points_required ASC
-    ";
-    $redemption_rules = $pdo->query($rules_sql)->fetchAll(PDO::FETCH_ASSOC);
-    // ------------------------------------------
+    // --- 健壮性修复：添加 try-catch 以防 pos_point_redemption_rules 表不存在 ---
+    $redemption_rules = [];
+    try {
+        $rules_sql = "
+            SELECT id, rule_name_zh, rule_name_es, points_required, reward_type, reward_value_decimal, reward_promo_id
+            FROM pos_point_redemption_rules
+            WHERE is_active = 1 AND deleted_at IS NULL
+            ORDER BY points_required ASC
+        ";
+        $redemption_rules = $pdo->query($rules_sql)->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        // 记录错误，但不要让API崩溃
+        error_log("POS Data Loader Warning: Could not load point redemption rules (Table might be missing). Error: " . $e->getMessage());
+        $redemption_rules = []; // 默认返回空数组
+    }
+    // -------------------------------------------------------------------------------------------------
 
     $data_payload = [
         'products' => array_values($products),
         'addons' => $addons,
         'categories' => $categories,
-        'redemption_rules' => $redemption_rules // --- 核心修复：添加规则到 payload ---
+        'redemption_rules' => $redemption_rules
     ];
 
     echo json_encode(['status' => 'success', 'data' => $data_payload]);
 
 } catch (PDOException $e) {
+    // 此处将捕获主查询（商品查询）中的任何错误
+    error_log("POS Data Loader CRITICAL ERROR: " . $e->getMessage());
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => '从数据库加载POS数据失败。', 'debug' => $e->getMessage()]);
 }
+?>

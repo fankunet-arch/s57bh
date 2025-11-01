@@ -363,11 +363,11 @@ async function initApplication() {
         await fetchInitialData();
         console.log("Initial data fetched (or attempted). STATE after fetch:", JSON.parse(JSON.stringify(STATE)));
 
-        if (!STATE.products || STATE.products.length === 0 || !STATE.categories || STATE.categories.length === 0) {
-           console.error("Essential data (products or categories) missing after fetchInitialData!");
-           throw new Error("Failed to load product or category data.");
-        }
-        console.log("Essential data check passed.");
+        // --- CORE FIX: Removed the fatal error check for empty products/categories ---
+        // This check caused the app to crash if the store was new.
+        // The rendering functions (renderProducts) already handle empty arrays gracefully.
+        
+        console.log("Essential data check skipped (as per fix), allowing empty stores.");
         
         const opsBody = document.querySelector('#opsOffcanvas .offcanvas-body');
         if (opsBody) {
