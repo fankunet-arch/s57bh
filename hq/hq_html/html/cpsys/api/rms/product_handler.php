@@ -2,7 +2,7 @@
 /**
  * Toptea HQ - RMS API Handler
  * Handles all CRUD for the new dynamic recipe engine.
- * Engineer: Gemini | Date: 2025-10-31 | Revision: 5.1 (Path Fix)
+ * Engineer: Gemini | Date: 2025-10-31 | Revision: 5.3 (Save Step Category in Adjustments)
  */
 // CORE FIX: Corrected the relative path to the core config file.
 require_once realpath(__DIR__ . '/../../../../core/config.php');
@@ -59,7 +59,8 @@ try {
                     $groupedAdjustments[$key]['overrides'][] = [
                         'material_id' => $adj['material_id'],
                         'quantity' => $adj['quantity'],
-                        'unit_id' => $adj['unit_id']
+                        'unit_id' => $adj['unit_id'],
+                        'step_category' => $adj['step_category'] // 传递步骤分类
                     ];
                 }
                 $data['adjustments'] = array_values($groupedAdjustments);
@@ -105,25 +106,41 @@ try {
             $pdo->prepare("DELETE FROM kds_recipe_adjustments WHERE product_id = ?")->execute([$productId]);
 
             if (!empty($productData['base_recipes'])) {
-                $stmt_recipe = $pdo->prepare("INSERT INTO kds_product_recipes (product_id, material_id, quantity, unit_id) VALUES (?, ?, ?, ?)");
+                $stmt_recipe = $pdo->prepare("INSERT INTO kds_product_recipes (product_id, material_id, quantity, unit_id, step_category, sort_order) VALUES (?, ?, ?, ?, ?, ?)");
                 foreach ($productData['base_recipes'] as $recipe) {
                      if (!empty($recipe['material_id']) && isset($recipe['quantity']) && !empty($recipe['unit_id'])) {
-                        $stmt_recipe->execute([$productId, $recipe['material_id'], $recipe['quantity'], $recipe['unit_id']]);
+                        $stmt_recipe->execute([
+                            $productId, 
+                            $recipe['material_id'], 
+                            $recipe['quantity'], 
+                            $recipe['unit_id'],
+                            $recipe['step_category'] ?? 'base',
+                            $recipe['sort_order'] ?? 0
+                        ]);
                      }
                 }
             }
             
             if (!empty($productData['adjustments'])) {
-                $stmt_adj = $pdo->prepare("INSERT INTO kds_recipe_adjustments (product_id, material_id, cup_id, sweetness_option_id, ice_option_id, quantity, unit_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                // FIX: Add step_category to the INSERT statement
+                $stmt_adj = $pdo->prepare("
+                    INSERT INTO kds_recipe_adjustments 
+                        (product_id, material_id, cup_id, sweetness_option_id, ice_option_id, quantity, unit_id, step_category) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
                 foreach ($productData['adjustments'] as $adj) {
                     if (!empty($adj['material_id']) && isset($adj['quantity']) && !empty($adj['unit_id'])) {
+                        // FIX: Get step_category, default to NULL if not provided or empty
+                        $step_category = (!empty($adj['step_category'])) ? $adj['step_category'] : null;
+                        
                         $stmt_adj->execute([
                             $productId, $adj['material_id'],
                             empty($adj['cup_id']) ? null : $adj['cup_id'],
                             empty($adj['sweetness_option_id']) ? null : $adj['sweetness_option_id'],
                             empty($adj['ice_option_id']) ? null : $adj['ice_option_id'],
                             $adj['quantity'],
-                            $adj['unit_id']
+                            $adj['unit_id'],
+                            $step_category // <-- Save the step category
                         ]);
                     }
                 }

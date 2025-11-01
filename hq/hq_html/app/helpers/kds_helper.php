@@ -2,7 +2,7 @@
 /**
  * Toptea HQ - cpsys
  * KDS Data Helper Functions
- * Engineer: Gemini | Date: 2025-10-31 | Revision: 13.1 (Fix getAllStatuses)
+ * Engineer: Gemini | Date: 2025-10-31 | Revision: 13.4 (Fix getAllStatuses column names)
  */
 
 // --- RMS: New Functions for Dynamic Recipe Engine ---
@@ -298,11 +298,11 @@ function getCupById(PDO $pdo, int $id) {
 
 // --- Product Management & Other Stable Functions ---
 function getAllStatuses(PDO $pdo): array {
-    $stmt = $pdo->query("SELECT id, status_code, status_name FROM kds_product_statuses ORDER BY status_code ASC");
+    $stmt = $pdo->query("SELECT id, status_code, status_name_zh, status_name_es FROM kds_product_statuses WHERE deleted_at IS NULL ORDER BY status_code ASC");
     return $stmt->fetchAll();
 }
 function getAllProducts(PDO $pdo): array {
-    $sql = "SELECT p.id, p.product_code, pt_zh.product_name AS name_zh, pt_es.product_name AS name_es, ps.status_name, p.is_active, p.created_at FROM kds_products p LEFT JOIN kds_product_translations pt_zh ON p.id = pt_zh.product_id AND pt_zh.language_code = 'zh-CN' LEFT JOIN kds_product_translations pt_es ON p.id = pt_es.product_id AND pt_es.language_code = 'es-ES' LEFT JOIN kds_product_statuses ps ON p.status_id = ps.id WHERE p.deleted_at IS NULL ORDER BY p.product_code ASC";
+    $sql = "SELECT p.id, p.product_code, pt_zh.product_name AS name_zh, pt_es.product_name AS name_es, ps.status_name_zh AS status_name, p.is_active, p.created_at FROM kds_products p LEFT JOIN kds_product_translations pt_zh ON p.id = pt_zh.product_id AND pt_zh.language_code = 'zh-CN' LEFT JOIN kds_product_translations pt_es ON p.id = pt_es.product_id AND pt_es.language_code = 'es-ES' LEFT JOIN kds_product_statuses ps ON p.status_id = ps.id WHERE p.deleted_at IS NULL ORDER BY p.product_code ASC";
     $stmt = $pdo->query($sql);
     return $stmt->fetchAll();
 }
@@ -396,8 +396,12 @@ function getAllVariantsByMenuItemId(PDO $pdo, int $menu_item_id): array {
             pv.variant_name_zh,
             pv.price_eur,
             pv.sort_order,
-            pv.is_default
+            pv.is_default,
+            p.product_code AS product_sku,
+            pt.product_name AS recipe_name_zh
         FROM pos_item_variants pv
+        JOIN kds_products p ON pv.product_id = p.id
+        LEFT JOIN kds_product_translations pt ON p.id = pt.product_id AND pt.language_code = 'zh-CN'
         WHERE pv.menu_item_id = ? AND pv.deleted_at IS NULL
         ORDER BY pv.sort_order ASC, pv.id ASC
     ";
@@ -410,7 +414,7 @@ function getAllProductRecipesForSelect(PDO $pdo): array {
     $sql = "
         SELECT 
             p.id,
-            p.product_code,
+            p.product_code AS product_sku,
             pt.product_name AS name_zh
         FROM kds_products p
         LEFT JOIN kds_product_translations pt ON p.id = pt.product_id AND pt.language_code = 'zh-CN'

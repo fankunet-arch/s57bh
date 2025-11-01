@@ -18,21 +18,23 @@
                 <thead>
                     <tr>
                         <th>状态编号</th>
-                        <th>状态名称</th>
+                        <th>状态名称 (中)</th>
+                        <th>状态名称 (西)</th>
                         <th class="text-end">操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($statuses)): ?>
-                        <tr><td colspan="3" class="text-center">暂无产品状态数据。</td></tr>
+                        <tr><td colspan="4" class="text-center">暂无产品状态数据。</td></tr>
                     <?php else: ?>
                         <?php foreach ($statuses as $status): ?>
                             <tr>
                                 <td><strong><?php echo htmlspecialchars($status['status_code']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($status['status_name']); ?></td>
+                                <td><?php echo htmlspecialchars($status['status_name_zh']); ?></td>
+                                <td><?php echo htmlspecialchars($status['status_name_es']); ?></td>
                                 <td class="text-end">
                                     <button class="btn btn-sm btn-outline-primary edit-btn" data-id="<?php echo $status['id']; ?>" data-bs-toggle="offcanvas" data-bs-target="#data-drawer">编辑</button>
-                                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="<?php echo $status['id']; ?>" data-name="<?php echo htmlspecialchars($status['status_name']); ?>">删除</button>
+                                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="<?php echo $status['id']; ?>" data-name="<?php echo htmlspecialchars($status['status_name_zh']); ?>">删除</button>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -56,8 +58,12 @@
                 <input type="number" class="form-control" id="status_code" name="status_code" required>
             </div>
             <div class="mb-3">
-                <label for="status_name" class="form-label">状态名称 <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" id="status_name" name="status_name" required>
+                <label for="status_name_zh" class="form-label">状态名称 (中) <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="status_name_zh" name="status_name_zh" required>
+            </div>
+            <div class="mb-3">
+                <label for="status_name_es" class="form-label">状态名称 (西) <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="status_name_es" name="status_name_es" required>
             </div>
             <div class="d-flex justify-content-end mt-4">
                 <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="offcanvas">取消</button>

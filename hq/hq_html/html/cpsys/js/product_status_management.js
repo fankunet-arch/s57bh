@@ -31,7 +31,8 @@ $(document).ready(function() {
                 if (response.status === 'success') {
                     const status = response.data;
                     $('#status_code').val(status.status_code);
-                    $('#status_name').val(status.status_name);
+                    $('#status_name_zh').val(status.status_name_zh);
+                    $('#status_name_es').val(status.status_name_es);
                 } else {
                     alert('获取数据失败: ' + response.message);
                     dataDrawer.hide();
@@ -49,7 +50,8 @@ $(document).ready(function() {
         const formData = {
             id: dataIdInput.val(),
             status_code: $('#status_code').val(),
-            status_name: $('#status_name').val(),
+            status_name_zh: $('#status_name_zh').val(),
+            status_name_es: $('#status_name_es').val(),
         };
 
         $.ajax({

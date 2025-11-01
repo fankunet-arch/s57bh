@@ -1,7 +1,7 @@
 <?php
 /**
  * Toptea HQ - RMS (Recipe Management System) View
- * Engineer: Gemini | Date: 2025-10-31 | Revision: 3.1 (Fix template structure)
+ * Engineer: Gemini | Date: 2025-10-31 | Revision: 3.5 (Add P-A-M-T Code Display)
  */
 ?>
 <div class="row">
@@ -76,7 +76,7 @@
                                     <label class="form-label">状态</label>
                                     <select class="form-select" id="status_id">
                                         <?php foreach($status_options as $s): ?>
-                                            <option value="<?php echo $s['id']; ?>"><?php echo htmlspecialchars($s['status_name']); ?></option>
+                                            <option value="<?php echo $s['id']; ?>"><?php echo htmlspecialchars($s['status_name_zh']); ?></option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
@@ -93,7 +93,7 @@
                         </div>
                         <div class="card-body">
                             <table class="table table-sm">
-                                <thead><tr><th>物料</th><th>用量</th><th>单位</th><th></th></tr></thead>
+                                <thead><tr><th>步骤</th><th>物料</th><th>用量</th><th>单位</th><th></th></tr></thead>
                                 <tbody id="base-recipe-body"></tbody>
                             </table>
                         </div>
@@ -118,6 +118,13 @@
     <table>
         <tbody id="recipe-row-template-container">
             <tr id="recipe-row-template">
+                <td>
+                    <select class="form-select form-select-sm step-category-select">
+                        <option value="base">① 底料</option>
+                        <option value="mixing">② 调杯</option>
+                        <option value="topping">③ 顶料</option>
+                    </select>
+                </td>
                 <td>
                     <select class="form-select form-select-sm material-select">
                         <option value="">-- 选择物料 --</option>
@@ -144,39 +151,58 @@
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h6 class="mb-0 text-info">当满足以下条件时:</h6>
+                
+                <div class="input-group input-group-sm ms-auto me-3" style="max-width: 250px;">
+                    <span class="input-group-text" title="P-A-M-T 组合编码">
+                        <i class="bi bi-upc-scan"></i>
+                    </span>
+                    <input type="text" class="form-control form-control-sm pamt-code-display" readonly style="background-color: #1a1d20; font-family: monospace; text-align: center;" value="[P-A-M-T]">
+                    <button class="btn btn-outline-secondary btn-copy-pamt" type="button" title="复制编码">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
                 <button type="button" class="btn-close btn-remove-adjustment-rule" aria-label="删除此规则"></button>
             </div>
             <div class="row g-3 mb-3">
                 <div class="col-md-4">
                     <label class="form-label">杯型</label>
                     <select class="form-select form-select-sm cup-condition">
-                        <option value="">-- 任意 --</option>
+                        <option value="" data-code="">-- 任意 --</option>
                          <?php foreach($cup_options as $c): ?>
-                            <option value="<?php echo $c['id']; ?>"><?php echo htmlspecialchars($c['cup_name']); ?></option>
+                            <option value="<?php echo $c['id']; ?>" data-code="<?php echo $c['cup_code']; ?>"><?php echo htmlspecialchars($c['cup_name']); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">甜度</label>
                     <select class="form-select form-select-sm sweetness-condition">
-                        <option value="">-- 任意 --</option>
+                        <option value="" data-code="">-- 任意 --</option>
                          <?php foreach($sweetness_options as $s): ?>
-                            <option value="<?php echo $s['id']; ?>"><?php echo htmlspecialchars($s['name_zh']); ?></option>
+                            <option value="<?php echo $s['id']; ?>" data-code="<?php echo $s['sweetness_code']; ?>"><?php echo htmlspecialchars($s['name_zh']); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">冰量</label>
                     <select class="form-select form-select-sm ice-condition">
-                        <option value="">-- 任意 --</option>
+                        <option value="" data-code="">-- 任意 --</option>
                          <?php foreach($ice_options as $i): ?>
-                            <option value="<?php echo $i['id']; ?>"><?php echo htmlspecialchars($i['name_zh']); ?></option>
+                            <option value="<?php echo $i['id']; ?>" data-code="<?php echo $i['ice_code']; ?>"><?php echo htmlspecialchars($i['name_zh']); ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
             </div>
             <h6 class="text-info">则覆盖以下原料用量:</h6>
             <table class="table table-sm table-borderless">
+                <thead>
+                    <tr>
+                        <th style="width: 25%;">步骤</th>
+                        <th style="width: 35%;">物料</th>
+                        <th style="width: 15%;">用量</th>
+                        <th style="width: 20%;">单位</th>
+                        <th style="width: 5%;"></th>
+                    </tr>
+                </thead>
                 <tbody class="adjustment-recipe-body"></tbody>
             </table>
             <button type="button" class="btn btn-outline-secondary btn-sm btn-add-adjustment-recipe-row">
