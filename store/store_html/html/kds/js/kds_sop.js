@@ -1,6 +1,14 @@
 /**
- * TopTea · KDS · SOP
- * - 语言切换（作用域化，杜绝误拦截导航；支持 ?lang=zh / ?lang=es、点击旗帜、快捷键 Alt+Z / Alt+E）
+ * TopTea · KDS · SOP (修复版 v5)
+ * - 修复：在 fetchSop 的 error/fail 路径中，将 waiting 文本重置为初始状态。
+ * - 修复：将 $.ajax.done/fail 中的 alert() 替换为 showKdsAlert(msg, true)。
+ * - 修复：根据要求修改右上角提示语 (tip_waiting) 的内容。
+ * - 修复：renderStaticUI 逻辑，正确替换 [data-i18n-key] 元素的文本，解决重复显示和未翻译问题。
+ * - 修复：I18N 对象补全所有 sop_view.php 中使用的静态 key。
+ * - 修复：语言逻辑统一使用 'kds_lang' ('zh-CN' / 'es-ES')
+ * - 修复：语言切换事件选择器 (data-lang="zh-CN")
+ * - 修复：默认语言确保为 'zh-CN'
+ * - 语言切换（作用域化，杜绝误拦截导航；支持 ?lang=zh-CN / ?lang=es-ES、点击旗帜、快捷键 Alt+Z / Alt+E）
  * - 静态 UI 文案 i18n（不改模板：JS 动态套文案，placeholder / 按钮 / 分组标签 / 等待提示）
  * - 仅左侧精准隐藏旧“请输入编码/--/虚线”提示（不会再让整页变白）
  * - SOP 动态卡片渲染按三分组（底料/调杯/顶料）
@@ -8,35 +16,49 @@
 $(function () {
   "use strict";
 
-  /* ========================= I18N ========================= */
+  /* ========================= I18N (修复：修改 tip_waiting, 增加 loading) ========================= */
   const I18N = {
-    zh: {
-      tip: "每步动作做到位，口感品质才会好。",
-      waiting: "等待查询…",
+    'zh-CN': {
       err: "查询失败：服务器错误",
-      // 静态 UI
-      input_placeholder: "输入产品编码...",
-      btn_finish: "制茶完成",
-      btn_shortage: "缺料申报",
-      tab_base: "底料",
-      tab_mixing: "调杯",
-      tab_topping: "顶料",
+      loading: "正在查询", // <--- 新增
+      // 动态
+      tip_waiting: "每步动作做到位，口感品质才会好。", // <--- 已按要求修改
+      cards_waiting: "等待查询...",
+      // 静态 UI (来自 sop_view.php)
+      placeholder_sku: "输入产品编码...",
+      info_enter_sku: "请先输入编码",
+      btn_action_complete: "制茶完成",
+      btn_action_report: "缺料申报",
+      nav_prep: "物料制备",
+      nav_expiry: "效期追踪",
+      nav_guide: "制杯指引",
+      btn_logout: "退出",
+      step_base: "底料",
+      step_mixing: "调杯",
+      step_topping: "顶料",
     },
-    es: {
-      tip: "Haz bien cada paso: mejoran la textura y la calidad.",
-      waiting: "Esperando consulta…",
+    'es-ES': {
       err: "Error del servidor",
-      // 静态 UI
-      input_placeholder: "Introducir código del producto...",
-      btn_finish: "Terminar",
-      btn_shortage: "Informe de faltantes",
-      tab_base: "Base",
-      tab_mixing: "Mezcla",
-      tab_topping: "Toppings",
+      loading: "Consultando", // <--- 新增
+      // 动态
+      tip_waiting: "Haz bien cada paso: mejoran la textura y la calidad.", // <--- 已按要求修改
+      cards_waiting: "Esperando consulta…",
+      // 静态 UI (来自 sop_view.php)
+      placeholder_sku: "Introducir código del producto...",
+      info_enter_sku: "Introducir código",
+      btn_action_complete: "Terminar",
+      btn_action_report: "Informe de faltantes",
+      nav_prep: "Preparación",
+      nav_expiry: "Caducidad",
+      nav_guide: "Guía SOP",
+      btn_logout: "Salir",
+      step_base: "Base",
+      step_mixing: "Mezcla",
+      step_topping: "Toppings",
     },
   };
 
-  /* ========================= Lang helpers ========================= */
+  /* ========================= Lang helpers (修复：逻辑统一) ========================= */
   function qp(name) {
     const m = new RegExp("(^|&)" + name + "=([^&]*)(&|$)", "i").exec(
       window.location.search.slice(1)
@@ -47,19 +69,17 @@ $(function () {
   // 初始化：URL 参数 → localStorage → html[lang]
   (function initLang() {
     const fromUrl = (qp("lang") || "").toLowerCase();
-    if (fromUrl === "es" || fromUrl === "zh") {
-      localStorage.setItem("TOPTEA_LANG", fromUrl);
-      document.documentElement.setAttribute(
-        "lang",
-        fromUrl === "es" ? "es-ES" : "zh-CN"
-      );
+    if (fromUrl === "es-es" || fromUrl === "zh-cn") {
+      localStorage.setItem("kds_lang", fromUrl); // 修复：使用 kds_lang
+      document.documentElement.setAttribute("lang", fromUrl);
     } else {
-      const saved = localStorage.getItem("TOPTEA_LANG");
-      if (saved === "es" || saved === "zh") {
-        document.documentElement.setAttribute(
-          "lang",
-          saved === "es" ? "es-ES" : "zh-CN"
-        );
+      const saved = localStorage.getItem("kds_lang"); // 修复：使用 kds_lang
+      if (saved === "es-ES" || saved === "zh-CN") {
+        document.documentElement.setAttribute("lang", saved);
+      } else {
+        // 确保默认是 zh-CN
+        document.documentElement.setAttribute("lang", "zh-CN");
+        localStorage.setItem("kds_lang", "zh-CN");
       }
     }
   })();
@@ -67,19 +87,19 @@ $(function () {
   function getLang() {
     const htmlLang =
       (document.documentElement.getAttribute("lang") || "").toLowerCase();
-    if (htmlLang.startsWith("es")) return "es";
-    if (htmlLang.startsWith("zh")) return "zh";
-    const saved = localStorage.getItem("TOPTEA_LANG");
-    return saved === "es" || saved === "zh" ? saved : "zh";
+    if (htmlLang.startsWith("es")) return "es-ES"; // 修复：返回 es-ES
+    if (htmlLang.startsWith("zh")) return "zh-CN"; // 修复：返回 zh-CN
+    const saved = localStorage.getItem("kds_lang"); // 修复：使用 kds_lang
+    return saved === "es-ES" || saved === "zh-CN" ? saved : "zh-CN"; // 修复：默认 zh-CN
   }
 
   function t(key) {
     const lang = getLang();
-    return (I18N[lang] || I18N.zh)[key] || key;
+    return (I18N[lang] || I18N['zh-CN'])[key] || key; // 修复：默认 zh-CN
   }
 
   function pick(zhVal, esVal) {
-    return getLang() === "es" ? esVal || zhVal : zhVal || esVal;
+    return getLang() === "es-ES" ? esVal || zhVal : zhVal || esVal; // 修复：检查 es-ES
   }
 
   function esc(s) {
@@ -93,17 +113,14 @@ $(function () {
   }
 
   function setLang(lang) {
-    document.documentElement.setAttribute(
-      "lang",
-      lang === "es" ? "es-ES" : "zh-CN"
-    );
-    localStorage.setItem("TOPTEA_LANG", lang === "es" ? "es" : "zh");
+    document.documentElement.setAttribute("lang", lang); // lang 已经是 zh-CN 或 es-ES
+    localStorage.setItem("kds_lang", lang); // 修复：使用 kds_lang
     // 同步渲染静态 + 动态
     renderStaticUI();
     renderAll();
   }
 
-  /* ========================= 语言切换（作用域化） =========================
+  /* ========================= 语言切换（修复：选择器） =========================
    * 重点：不再用“全局捕获”去拦截任何点击，避免误伤导航/菜单。
    * 只对 “明确标注 data-lang 的元素” 进行事件委托；另外仅在 header 区域尝试自动标注旗帜。
    */
@@ -115,19 +132,19 @@ $(function () {
 
   // 2) 仅对 data-lang 元素做事件委托（全局冒泡，安全）
   $(document)
-    .off("click.kds.lang", "[data-lang='zh']")
-    .on("click.kds.lang", "[data-lang='zh']", function (e) {
+    .off("click.kds.lang", "[data-lang='zh-CN']") // 修复：选择器
+    .on("click.kds.lang", "[data-lang='zh-CN']", function (e) { // 修复：选择器
       e.preventDefault();
       e.stopPropagation();
-      setLang("zh");
+      setLang("zh-CN"); // 修复：值
     });
 
   $(document)
-    .off("click.kds.lang.es", "[data-lang='es']")
-    .on("click.kds.lang.es", "[data-lang='es']", function (e) {
+    .off("click.kds.lang.es", "[data-lang='es-ES']") // 修复：选择器
+    .on("click.kds.lang.es", "[data-lang='es-ES']", function (e) { // 修复：选择器
       e.preventDefault();
       e.stopPropagation();
-      setLang("es");
+      setLang("es-ES"); // 修复：值
     });
 
   // 3) 仅在 header/导航区域内，自动给旗帜打 data-lang（避免误标一切元素）
@@ -139,7 +156,7 @@ $(function () {
 
     cands.forEach((el) => {
       const has = (el.getAttribute("data-lang") || "").toLowerCase();
-      if (has === "zh" || has === "es") return;
+      if (has === "zh-cn" || has === "es-es") return; // 修复：检查
 
       const label = (
         el.getAttribute("alt") ||
@@ -159,16 +176,16 @@ $(function () {
 
       // 命中非常明确的旗帜线索，才标记
       if (
-        /(flag|bandera)/.test(hay) &&
-        (/(^|\W)(es|esp|spanish|espa)\b/.test(hay) || /\/es\b|spain/.test(hay))
+        (/(flag|bandera)/.test(hay) &&
+        (/(^|\W)(es|esp|spanish|espa)\b/.test(hay) || /\/es\b|spain/.test(hay)))
       ) {
-        el.setAttribute("data-lang", "es");
+        el.setAttribute("data-lang", "es-ES"); // 修复：值
       }
       if (
-        /(flag|bandera)/.test(hay) &&
-        (/(^|\W)(zh|cn|china|中文|简体|汉)\b/.test(hay) || /\/cn\b|china/.test(hay))
+        (/(flag|bandera)/.test(hay) &&
+        (/(^|\W)(zh|cn|china|中文|简体|汉)\b/.test(hay) || /\/cn\b|china/.test(hay)))
       ) {
-        el.setAttribute("data-lang", "zh");
+        el.setAttribute("data-lang", "zh-CN"); // 修复：值
       }
     });
   })();
@@ -181,11 +198,11 @@ $(function () {
         const k = (e.key || "").toLowerCase();
         if (k === "z") {
           e.preventDefault();
-          setLang("zh");
+          setLang("zh-CN"); // 修复：值
         }
         if (k === "e") {
           e.preventDefault();
-          setLang("es");
+          setLang("es-ES"); // 修复：值
         }
       }
     },
@@ -196,11 +213,7 @@ $(function () {
   const $form = $("#sku-search-form");
   const $input = $("#sku-input, #kds_code_input").first();
 
-  const $tip = $("#kds-step-tip, .sop-tip, [data-role='sop-tip']").first();
-
-  const $tabBase = $("#tab-base, .kds-step-tab[data-step='base']").first();
-  const $tabMix = $("#tab-mixing, .kds-step-tab[data-step='mixing']").first();
-  const $tabTop = $("#tab-topping, .kds-step-tab[data-step='topping']").first();
+  // $tip, $tabBase, $tabMix, $tabTop 在 renderStaticUI 中动态查找
 
   const $wrapBase = $("#cards-base");
   const $wrapMix = $("#cards-mixing");
@@ -224,6 +237,7 @@ $(function () {
     if (!host) return;
 
     [
+      "[data-i18n-key='info_enter_sku']", // 修复：现在这个 key 会被 renderStaticUI 处理，所以也要隐藏
       "[data-i18n='info_enter_sku']",
       ".kds-enter-code",
       ".kds-enter-code-wrapper",
@@ -241,92 +255,43 @@ $(function () {
         const tx = (el.textContent || "").trim();
         if (tx === "--") el.style.display = "none";
         if (/^[-—\s]{3,}$/.test(tx)) el.style.display = "none";
-        if (tx === "请先输入编码" || /introduce\s+el\s+c[oó]digo/i.test(tx))
-          el.style.display = "none";
+        // "请先输入编码" 会被 i18n 替换，所以上面的选择器会隐藏它
       }
     });
   }
 
-  /* ========================= 静态 UI 文案渲染 =========================
-   * 不改模板：只要节点存在，就替换 label / placeholder / 按钮文字 / 分组标签。
+  /* ========================= 静态 UI 文案渲染 (修复) =========================
+   * 查找所有带 [data-i18n-key] 的元素并替换其内容。
    */
-  function setTextIfExists($nodes, text) {
-    if (!$nodes || !$nodes.length) return;
-    $nodes.each(function () {
-      // 尽量不破坏内部结构（比如徽章/图标），仅替换“末尾文本节点”或 data-i18n-holder
-      const holder =
-        this.querySelector("[data-i18n-holder]") ||
-        this.querySelector(".kds-tab-label") ||
-        null;
-
-      if (holder) {
-        holder.textContent = text;
-        return;
-      }
-
-      // 如果是按钮/标签且内部有多个子元素，替换最后一个文本节点
-      let replaced = false;
-      for (let i = this.childNodes.length - 1; i >= 0; i--) {
-        const n = this.childNodes[i];
-        if (n.nodeType === 3 && n.nodeValue.trim().length > 0) {
-          n.nodeValue = text;
-          replaced = true;
-          break;
+  function renderStaticUI() {
+    document.querySelectorAll("[data-i18n-key]").forEach((el) => {
+      const key = el.getAttribute("data-i18n-key");
+      const translation = t(key);
+      if (translation && translation !== key) {
+        if (
+          el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA"
+        ) {
+          if (key.includes("placeholder")) {
+            el.setAttribute("placeholder", translation);
+          } else {
+            el.value = translation;
+          }
+        } else {
+          el.textContent = translation;
         }
       }
-      if (!replaced) {
-        // 没有文本节点，则追加一个可控 holder
-        const span = document.createElement("span");
-        span.setAttribute("data-i18n-holder", "1");
-        span.style.marginLeft = "6px";
-        span.textContent = text;
-        this.appendChild(span);
-      }
     });
-  }
 
-  function renderStaticUI() {
+    // 激活旗帜状态
     const lang = getLang();
-
-    // 顶部蓝条提示
-    if ($tip.length) $tip.text(t("tip"));
-
-    // 左侧搜索输入框 placeholder
-    const $inputs = $("#sku-input, #kds_code_input, [name='kds_code']");
-    $inputs.each(function () {
-      if (this.tagName === "INPUT") {
-        this.setAttribute("placeholder", t("input_placeholder"));
+    document.querySelectorAll(".lang-flag, [data-lang]").forEach((el) => {
+      if (el.getAttribute("data-lang") === lang) {
+        el.classList.add("active");
+      } else {
+        el.classList.remove("active");
       }
     });
-
-    // 左侧两个按钮（尽量匹配一组候选选择器；匹配到就替换）
-    setTextIfExists(
-      $(
-        "#btn-finish, .btn-finish, [data-role='finish'], .kds-finish-btn, .btn-primary"
-      ).filter(function () {
-        // 过滤成“左侧大按钮”，避免误伤顶部导航
-        const rect = this.getBoundingClientRect();
-        return rect.width > 120 && rect.height > 36;
-      }),
-      t("btn_finish")
-    );
-
-    setTextIfExists(
-      $(
-        "#btn-shortage, .btn-shortage, [data-role='shortage'], .kds-shortage-btn"
-      ),
-      t("btn_shortage")
-    );
-
-    // 三个分组 Tab 文案
-    if ($tabBase.length) setTextIfExists($tabBase, t("tab_base"));
-    if ($tabMix.length) setTextIfExists($tabMix, t("tab_mixing"));
-    if ($tabTop.length) setTextIfExists($tabTop, t("tab_topping"));
-
-    // 中央“等待查询…”（若可见）
-    if ($waiting.length && $waiting.is(":visible")) {
-      $waiting.text(t("waiting"));
-    }
   }
 
   /* ========================= 状态 ========================= */
@@ -453,7 +418,7 @@ $(function () {
     const gp = { base: [], mixing: [], topping: [] };
     (DATA.recipe || []).forEach((r) => gp[normalizeCat(r.step_category)].push(r));
 
-    const isEs = getLang() === "es";
+    const isEs = getLang() === "es-ES"; // 修复：检查 es-ES
 
     let i = 1;
     gp.base.forEach((r) => {
@@ -504,13 +469,18 @@ $(function () {
     else if (gp.mixing.length) showTab("mixing");
     else if (gp.topping.length) showTab("topping");
     else {
-      if ($waiting.length) $waiting.text(t("waiting")).show();
+      if ($waiting.length) $waiting.text(t("cards_waiting")).show(); // 修复：使用 i18n
       showTab("base");
     }
   }
 
   /* ========================= 标签可点 ========================= */
   function bindTabs() {
+    // 动态查找 tabs
+    const $tabBase = $("#tab-base, .kds-step-tab[data-step='base']").first();
+    const $tabMix = $("#tab-mixing, .kds-step-tab[data-step='mixing']").first();
+    const $tabTop = $("#tab-topping, .kds-step-tab[data-step='topping']").first();
+    
     if ($tabBase.length && !$tabBase.data("step"))
       $tabBase.attr("data-step", "base").addClass("kds-step-tab");
     if ($tabMix.length && !$tabMix.data("step"))
@@ -532,10 +502,11 @@ $(function () {
       });
   }
 
-  /* ========================= SOP Ajax ========================= */
+  /* ========================= SOP Ajax (修复：使用 showKdsAlert 和 重置waiting) ========================= */
   function fetchSop(code) {
     if (!code) return;
-    if ($waiting.length) $waiting.text(t("waiting")).show();
+    // 修复：使用 'loading' key
+    if ($waiting.length) $waiting.text(t("loading") + " " + esc(code) + "...").show(); 
     $allWraps.empty();
 
     $.ajax({
@@ -546,15 +517,24 @@ $(function () {
     })
       .done(function (res) {
         if (!res || res.status !== "success" || !res.data) {
-          alert(t("err"));
+          const errorMsg = res.message || t("err");
+          // 修复：在显示错误前，重置 waiting 文本
+          if ($waiting.length) $waiting.text(t("cards_waiting")).show(); 
+          showKdsAlert(errorMsg, true); // 修复：使用 showKdsAlert
           return;
         }
         DATA = { product: res.data.product || {}, recipe: res.data.recipe || [] };
-        if ($waiting.length) $waiting.hide();
+        if ($waiting.length) $waiting.hide(); // 成功才隐藏
         renderAll();
       })
-      .fail(function () {
-        alert(t("err"));
+      .fail(function (jqXHR, textStatus, errorThrown) {
+        let errorMsg = t("err");
+        if (jqXHR.responseJSON && jqXHR.responseJSON.message) {
+            errorMsg = jqXHR.responseJSON.message;
+        }
+        // 修复：在显示错误前，重置 waiting 文本
+        if ($waiting.length) $waiting.text(t("cards_waiting")).show();
+        showKdsAlert(errorMsg, true); // 修复：使用 showKdsAlert
       });
   }
 

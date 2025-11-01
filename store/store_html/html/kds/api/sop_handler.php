@@ -1,12 +1,12 @@
 <?php
 /**
- * TopTea · KDS · SOP 查询接口（修正：字段命名 + 选项名称）
- * 仅修复：前端 “undefined” 与名称不显示；不改其它业务。
- * - 返回字段与 /html/kds/js/kds_sop.js 期望严格对齐：
- *   product: { product_id, product_code, name_zh, name_es, status_name_zh, status_name_es,
- *              cup_name_zh?, cup_name_es?, ice_name_zh?, ice_name_es?, sweetness_name_zh?, sweetness_name_es? }
- *   recipe : [ { material_zh, material_es, unit_zh, unit_es, quantity, step_category } ... ]
- *   options: base_info 时返回 { cups:[{cup_code,cup_name}], ice_options:[{ice_code,name_zh,name_es}], sweetness_options:[{sweetness_code,name_zh,name_es}] }
+ * TopTea · KDS · SOP 查询接口 (V5 - 严格RMS关联校验版)
+ * 修复：
+ * - [安全] 严格校验 A, M, T 码。如果提供了 A/M/T 码，该码不仅要在字典表存在，
+ * 还必须通过关联表 (pos_item_variants, kds_product_ice_options, kds_product_sweetness_options)
+ * 明确关联到该 P-Code (product_id)，否则拒绝查询并返回404。
+ * - 完整引入 kds_helper.php 的动态配方调整逻辑 (best_adjust)。
+ * - 保持为前端返回 A/M/T 选项名称（用于左侧概览）的逻辑。
  */
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
@@ -19,140 +19,37 @@ function out_json(string $s, string $m, $d=null, int $code=200){
 }
 function ok($d){ out_json('success','OK',$d,200); }
 
-/* ---------- load config (path fix) ---------- */
-$__html_root   = dirname(__DIR__, 2);                 // /.../store_html/html
+/* ---------- 1) 引导配置 & 核心助手 (KDS Helper) ---------- */
+$__html_root   = dirname(__DIR__, 2); // /.../store_html/html
 $__config_path = realpath($__html_root . '/../kds/core/config.php');
+$__helper_path = realpath($__html_root . '/../kds/helpers/kds_helper.php'); // <--- 引入核心助手
+
 if (!$__config_path || !file_exists($__config_path)) {
-  out_json('error','配置文件未找到', ['expected'=>$__html_root . '/../kds/core/config.php'], 500);
+  out_json('error','配置文件未找到', null, 500);
 }
+if (!$__helper_path || !file_exists($__helper_path)) {
+  out_json('error','核心助手(kds_helper)未找到', null, 500);
+}
+
 require_once $__config_path; // must define $pdo
+require_once $__helper_path; // <--- 引入 kds_helper.php
+
 if (!isset($pdo) || !($pdo instanceof PDO)) {
   out_json('error','数据库连接失败。', null, 500);
 }
-
-/* ---------- helpers (local,最小可用) ---------- */
-function parse_code_local(string $raw): ?array {
-  $raw = strtoupper(trim($raw));
-  if ($raw === '' || !preg_match('/^[A-Z0-9-]+$/', $raw)) return null;
-  $seg = array_values(array_filter(explode('-', $raw), fn($s)=>$s!==''));
-  if (count($seg) > 4) return null;
-  return ['p'=>$seg[0]??'', 'a'=>$seg[1]??null, 'm'=>$seg[2]??null, 't'=>$seg[3]??null, 'raw'=>$raw];
+if (!function_exists('best_adjust')) {
+  out_json('error','动态配方助手(best_adjust)加载失败。', null, 500);
 }
 
-function get_product_row(PDO $pdo, string $p_code): ?array {
-  $st=$pdo->prepare("SELECT id, product_code, status_id, is_active, is_deleted_flag
-                     FROM kds_products WHERE product_code=? LIMIT 1");
-  $st->execute([$p_code]);
-  $r=$st->fetch(PDO::FETCH_ASSOC);
-  return $r ?: null;
-}
-
-function get_product_names(PDO $pdo, int $pid): array {
-  $st=$pdo->prepare("SELECT language_code, product_name
-                     FROM kds_product_translations WHERE product_id=?");
-  $st->execute([$pid]);
-  $names=['name_zh'=>null,'name_es'=>null];
-  foreach($st->fetchAll(PDO::FETCH_ASSOC) as $row){
-    if($row['language_code']==='zh-CN'){ $names['name_zh']=$row['product_name']; }
-    if($row['language_code']==='es-ES'){ $names['name_es']=$row['product_name']; }
-  }
-  return $names;
-}
-function get_status_names(PDO $pdo, int $status_id): array {
-  $st=$pdo->prepare("SELECT status_name_zh, status_name_es FROM kds_product_statuses WHERE id=?");
-  $st->execute([$status_id]);
-  $r=$st->fetch(PDO::FETCH_ASSOC) ?: [];
-  return [
-    'status_name_zh'=>$r['status_name_zh'] ?? null,
-    'status_name_es'=>$r['status_name_es'] ?? null
-  ];
-}
-
-function get_unit_names(PDO $pdo, int $unit_id): array {
-  $st=$pdo->prepare("SELECT language_code, unit_name FROM kds_unit_translations WHERE unit_id=?");
-  $st->execute([$unit_id]);
-  $names=['unit_zh'=>null,'unit_es'=>null];
-  foreach($st->fetchAll(PDO::FETCH_ASSOC) as $row){
-    if($row['language_code']==='zh-CN'){ $names['unit_zh']=$row['unit_name']; }
-    if($row['language_code']==='es-ES'){ $names['unit_es']=$row['unit_name']; }
-  }
-  return $names;
-}
-
-function get_recipe(PDO $pdo, int $pid): array {
-  $sql = "SELECT r.material_id, r.unit_id, r.quantity, r.step_category,
-                 mt_zh.material_name AS m_zh, mt_es.material_name AS m_es
-          FROM kds_product_recipes r
-          LEFT JOIN kds_material_translations mt_zh
-                 ON mt_zh.material_id=r.material_id AND mt_zh.language_code='zh-CN'
-          LEFT JOIN kds_material_translations mt_es
-                 ON mt_es.material_id=r.material_id AND mt_es.language_code='es-ES'
-          WHERE r.product_id=?
-          ORDER BY FIELD(r.step_category,'base','mixing','topping'), r.sort_order, r.id";
-  $st=$pdo->prepare($sql); $st->execute([$pid]);
-  $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
-  $out=[];
-  foreach($rows as $r){
-    $u = get_unit_names($pdo, (int)$r['unit_id']);
-    $out[] = [
-      'material_zh'   => $r['m_zh'] ?? null,
-      'material_es'   => $r['m_es'] ?? null,
-      'unit_zh'       => $u['unit_zh'],
-      'unit_es'       => $u['unit_es'],
-      'quantity'      => is_null($r['quantity'])? null : (float)$r['quantity'],
-      'step_category' => $r['step_category']
-    ];
-  }
-  return $out;
-}
-
-function get_cup_list(PDO $pdo): array {
-  $rows=$pdo->query("SELECT cup_code, cup_name, sop_description_es FROM kds_cups WHERE deleted_at IS NULL ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-  $out=[];
-  foreach($rows as $r){
-    $out[]=[
-      'cup_code'=>(int)$r['cup_code'],
-      'cup_name'=>$r['cup_name'],        // 作为 zh
-      'cup_name_es'=>$r['sop_description_es'] ?? $r['cup_name'], // 作为 es (无独立列时回退)
-    ];
-  }
-  return $out;
-}
-function get_ice_list(PDO $pdo): array {
-  $sql="SELECT io.ice_code,
-               tzh.ice_option_name AS name_zh,
-               tes.ice_option_name AS name_es
-        FROM kds_ice_options io
-        LEFT JOIN kds_ice_option_translations tzh ON tzh.ice_option_id=io.id AND tzh.language_code='zh-CN'
-        LEFT JOIN kds_ice_option_translations tes ON tes.ice_option_id=io.id AND tes.language_code='es-ES'
-        WHERE io.deleted_at IS NULL
-        ORDER BY io.ice_code";
-  $rows=$pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
-  $out=[]; foreach($rows as $r){
-    $out[]=['ice_code'=>(int)$r['ice_code'],'name_zh'=>$r['name_zh'],'name_es'=>$r['name_es']];
-  } return $out;
-}
-function get_sweet_list(PDO $pdo): array {
-  $sql="SELECT so.sweetness_code,
-               tzh.sweetness_option_name AS name_zh,
-               tes.sweetness_option_name AS name_es
-        FROM kds_sweetness_options so
-        LEFT JOIN kds_sweetness_option_translations tzh ON tzh.sweetness_option_id=so.id AND tzh.language_code='zh-CN'
-        LEFT JOIN kds_sweetness_option_translations tes ON tes.sweetness_option_id=so.id AND tes.language_code='es-ES'
-        WHERE so.deleted_at IS NULL
-        ORDER BY so.sweetness_code";
-  $rows=$pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
-  $out=[]; foreach($rows as $r){
-    $out[]=['sweetness_code'=>(int)$r['sweetness_code'],'name_zh'=>$r['name_zh'],'name_es'=>$r['name_es']];
-  } return $out;
-}
-
+/* ---------- 2) 专门用于“左侧概览”的选项名称获取函数 (保留) ---------- */
+// (这些函数获取选项的 "名称", e.g., "中杯", "少冰")
 function get_cup_names_by_code(PDO $pdo, ?string $code): array {
   if ($code===null) return ['cup_name_zh'=>null,'cup_name_es'=>null];
-  $st=$pdo->prepare("SELECT cup_name, sop_description_es FROM kds_cups WHERE cup_code=? LIMIT 1");
+  $st=$pdo->prepare("SELECT cup_name FROM kds_cups WHERE cup_code=? AND deleted_at IS NULL LIMIT 1");
   $st->execute([(int)$code]);
   $r=$st->fetch(PDO::FETCH_ASSOC) ?: [];
-  return ['cup_name_zh'=>$r['cup_name']??null, 'cup_name_es'=>($r['sop_description_es']??$r['cup_name']??null)];
+  // 左侧概览使用 cup_name
+  return ['cup_name_zh'=>$r['cup_name']??null, 'cup_name_es'=>$r['cup_name']??null];
 }
 function get_ice_names_by_code(PDO $pdo, ?string $code): array {
   if ($code===null) return ['ice_name_zh'=>null,'ice_name_es'=>null];
@@ -160,7 +57,7 @@ function get_ice_names_by_code(PDO $pdo, ?string $code): array {
         FROM kds_ice_options io
         LEFT JOIN kds_ice_option_translations tzh ON tzh.ice_option_id=io.id AND tzh.language_code='zh-CN'
         LEFT JOIN kds_ice_option_translations tes ON tes.ice_option_id=io.id AND tes.language_code='es-ES'
-        WHERE io.ice_code=? LIMIT 1";
+        WHERE io.ice_code=? AND io.deleted_at IS NULL LIMIT 1";
   $st=$pdo->prepare($sql); $st->execute([(int)$code]); $r=$st->fetch(PDO::FETCH_ASSOC) ?: [];
   return ['ice_name_zh'=>$r['zh']??null,'ice_name_es'=>$r['es']??null];
 }
@@ -170,45 +67,127 @@ function get_sweet_names_by_code(PDO $pdo, ?string $code): array {
         FROM kds_sweetness_options so
         LEFT JOIN kds_sweetness_option_translations tzh ON tzh.sweetness_option_id=so.id AND tzh.language_code='zh-CN'
         LEFT JOIN kds_sweetness_option_translations tes ON tes.sweetness_option_id=so.id AND tes.language_code='es-ES'
-        WHERE so.sweetness_code=? LIMIT 1";
+        WHERE so.sweetness_code=? AND so.deleted_at IS NULL LIMIT 1";
   $st=$pdo->prepare($sql); $st->execute([(int)$code]); $r=$st->fetch(PDO::FETCH_ASSOC) ?: [];
   return ['sweetness_name_zh'=>$r['zh']??null,'sweetness_name_es'=>$r['es']??null];
 }
 
-/* ---------- main ---------- */
+/* -------------------- 3) 主流程 -------------------- */
 try{
   $raw = $_GET['code'] ?? '';
-  $seg = parse_code_local($raw);
+  $seg = parse_code($raw); // 使用 kds_helper.php 的函数
   if (!$seg || $seg['p']==='') out_json('error','编码不合法', null, 400);
 
-  $prod = get_product_row($pdo, $seg['p']);
+  // 1. 验证产品
+  $prod = get_product($pdo, $seg['p']); // 使用 kds_helper.php 的函数
   if(!$prod || (int)$prod['is_deleted_flag']!==0 || (int)$prod['is_active']!==1){
-    out_json('error','找不到该产品或未上架', null, 404);
+    out_json('error','找不到该产品或未上架 (P-Code: ' . htmlspecialchars($seg['p']) . ')', null, 404);
   }
+  $pid = (int)$prod['id'];
 
+  // 2. 获取产品基础信息 (名称, 状态)
   $prod_info = array_merge(
-    ['product_id'=>(int)$prod['id'], 'product_code'=>$prod['product_code']],
-    get_product_names($pdo, (int)$prod['id']),
-    get_status_names($pdo, (int)$prod['status_id'])
+    ['product_id'=>$pid, 'product_code'=>$prod['product_code']],
+    get_product_info($pdo, $pid, (int)$prod['status_id']) // kds_helper
   );
 
-  $recipe = get_recipe($pdo, (int)$prod['id']);
-
-  // NO A/M/T -> base_info (含可选项)
+  // 3. (P-Code ONLY) 仅查询基础信息
   if ($seg['a']===null && $seg['m']===null && $seg['t']===null) {
      ok([
        'type'=>'base_info',
        'product'=>$prod_info,
-       'recipe'=>$recipe,
-       'options'=>[
-         'cups'=>get_cup_list($pdo),
-         'ice_options'=>get_ice_list($pdo),
-         'sweetness_options'=>get_sweet_list($pdo),
-       ]
+       'recipe'=> get_base_recipe($pdo, $pid), // kds_helper
+       'options'=> get_available_options($pdo, $pid, $prod['product_code']) // kds_helper
      ]);
   }
 
-  // 带 A/M/T -> adjusted_recipe (补充已选项名称，供左侧“概览”显示)
+  // 4. (P-A-M-T) 动态计算配方
+  
+  // 4a. 将 A,M,T 码转换为 数据库 ID，并进行严格的“存在性”和“关联性”校验
+  
+  $cup_id = null;
+  if ($seg['a'] !== null) {
+      // 4a.1 检查杯型编码是否存在
+      $cup_id = id_by_code($pdo, 'kds_cups', 'cup_code', $seg['a']);
+      if ($cup_id === null) {
+          out_json('error', '杯型编码 (A-code) 无效: ' . htmlspecialchars($seg['a']), null, 404);
+      }
+      // 4a.2 [严格校验] 检查杯型是否已关联到该产品 (通过 pos_item_variants)
+      $stmt = $pdo->prepare("SELECT 1 FROM pos_item_variants WHERE product_id = ? AND cup_id = ? AND deleted_at IS NULL LIMIT 1");
+      $stmt->execute([$pid, $cup_id]);
+      if ($stmt->fetchColumn() === false) {
+          out_json('error', '无效的产品组合：该产品 (P=' . $prod['product_code'] . ') 未配置此杯型 (A=' . $seg['a'] . ')。', null, 404);
+      }
+  }
+  
+  $ice_id = null;
+  if ($seg['m'] !== null) {
+      // 4a.3 检查冰量编码是否存在
+      $ice_id = id_by_code($pdo, 'kds_ice_options', 'ice_code', $seg['m']);
+      if ($ice_id === null) {
+          out_json('error', '冰量编码 (M-code) 无效: ' . htmlspecialchars($seg['m']), null, 404);
+      }
+      // 4a.4 [严格校验] 检查冰量是否已关联到该产品 (通过 kds_product_ice_options)
+      $stmt = $pdo->prepare("SELECT 1 FROM kds_product_ice_options WHERE product_id = ? AND ice_option_id = ? LIMIT 1");
+      $stmt->execute([$pid, $ice_id]);
+      if ($stmt->fetchColumn() === false) {
+          out_json('error', '无效的产品组合：该产品 (P=' . $prod['product_code'] . ') 未配置此冰量 (M=' . $seg['m'] . ')。', null, 404);
+      }
+  }
+
+  $sweet_id = null;
+  if ($seg['t'] !== null) {
+      // 4a.5 检查甜度编码是否存在
+      $sweet_id = id_by_code($pdo, 'kds_sweetness_options', 'sweetness_code', $seg['t']);
+      if ($sweet_id === null) {
+          out_json('error', '甜度编码 (T-code) 无效: ' . htmlspecialchars($seg['t']), null, 404);
+      }
+      // 4a.6 [严格校验] 检查甜度是否已关联到该产品 (通过 kds_product_sweetness_options)
+      $stmt = $pdo->prepare("SELECT 1 FROM kds_product_sweetness_options WHERE product_id = ? AND sweetness_option_id = ? LIMIT 1");
+      $stmt->execute([$pid, $sweet_id]);
+      if ($stmt->fetchColumn() === false) {
+          out_json('error', '无效的产品组合：该产品 (P=' . $prod['product_code'] . ') 未配置此甜度 (T=' . $seg['t'] . ')。', null, 404);
+      }
+  }
+
+  // 4b. 获取基础配方结构
+  $base_recipe_structure = base_recipe($pdo, $pid); // kds_helper
+  if (empty($base_recipe_structure)) {
+      out_json('error', '该产品尚未配置基础配方。', null, 404);
+  }
+  
+  $adjusted_recipe = [];
+  
+  // 4c. 循环基础配方，应用调整规则
+  foreach ($base_recipe_structure as $r) {
+      $mid = (int)$r['material_id'];
+      $qty = (float)$r['quantity'];
+      $uid = (int)$r['unit_id'];
+      $cat = norm_cat((string)$r['step_category']); // kds_helper
+
+      // 寻找最佳调整
+      $adj = best_adjust($pdo, $pid, $mid, $cup_id, $ice_id, $sweet_id); // kds_helper
+      
+      if ($adj) {
+          $qty = (float)$adj['quantity'];
+          $uid = (int)$adj['unit_id'];
+      }
+      
+      // 获取物料和单位的双语名称
+      $m_names = m_name($pdo, $mid); // kds_helper
+      $u_names = u_name($pdo, $uid); // kds_helper
+
+      $adjusted_recipe[] = [
+          'material_zh'   => $m_names['zh'],
+          'material_es'   => $m_names['es'],
+          'unit_zh'       => $u_names['zh'],
+          'unit_es'       => $u_names['es'],
+          'quantity'      => $qty,
+          'step_category' => $cat
+      ];
+  }
+  
+  // 4d. 补充左侧概览所需的选项名称
   $names = array_merge(
     get_cup_names_by_code($pdo, $seg['a']),
     get_ice_names_by_code($pdo, $seg['m']),
@@ -219,10 +198,12 @@ try{
   ok([
     'type'=>'adjusted_recipe',
     'product'=>$prod_info,
-    'recipe'=>$recipe
+    'recipe'=>$adjusted_recipe // <--- 返回计算后的配方
   ]);
 
 }catch(Throwable $e){
   error_log('KDS sop_handler error: '.$e->getMessage());
+  // A1.png 中显示的“服务器错误”就是这个
   out_json('error','服务器错误', ['debug'=>$e->getMessage()], 500);
 }
+?>

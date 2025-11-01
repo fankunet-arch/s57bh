@@ -2,10 +2,37 @@
  * Toptea KDS - UI Helpers
  * 包含自定义对话框 (alert) 逻辑，以兼容套壳环境。
  * Engineer: Gemini | Date: 2025-10-31
- * Revision: 1.1 (DOM Ready Fix)
+ * Revision: 1.2 (Added KDS Clock)
  */
 
 var kdsSimpleAlertModalInstance = null;
+
+/**
+ * 启动 KDS 顶部导航栏时钟
+ */
+function startKdsClock() {
+    var clockEl = document.getElementById('kds-clock');
+    if (!clockEl) {
+        console.warn("KDS Clock element (#kds-clock) not found.");
+        return;
+    }
+    
+    function tick() {
+        var now = new Date();
+        var h = String(now.getHours()).padStart(2, '0');
+        var m = String(now.getMinutes()).padStart(2, '0');
+        var s = String(now.getSeconds()).padStart(2, '0');
+        clockEl.textContent = h + ':' + m + ':' + s;
+    }
+    
+    try {
+        tick(); // 立即执行一次
+        setInterval(tick, 1000); // 每秒更新
+    } catch (e) {
+        console.error("Failed to start KDS Clock:", e);
+    }
+}
+
 
 // 延迟初始化，确保 Bootstrap 和 DOM 元素已加载
 document.addEventListener('DOMContentLoaded', function() {
@@ -17,6 +44,9 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.error("KDS Alert Modal HTML (kdsSimpleAlertModal) 未在 main.php 中找到。");
     }
+    
+    // 启动时钟
+    startKdsClock();
 });
 
 
