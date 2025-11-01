@@ -2,7 +2,7 @@
 /**
  * Toptea Store - KDS
  * KDS Data Helper Functions (HELPER LIBRARY)
- * Engineer: Gemini | Date: 2025-10-31 | Revision: 5.0 (Restored as Helper Library)
+ * Engineer: Gemini | Date: 2025-10-31 | Revision: 5.2 (Fix best_adjust to select step_category)
  *
  * 此文件现在是一个纯粹的函数库，供 API 处理器 (如 sop_handler.php) 调用。
  * 它不再处理 API 请求或输出 JSON。
@@ -50,7 +50,7 @@ function best_adjust(PDO $pdo, int $pid, int $mid, ?int $cup, ?int $ice, ?int $s
   if ($ice!==null){ $cond[]="(ice_option_id IS NULL OR ice_option_id=?)"; $args[]=$ice; $score[]="(ice_option_id IS NOT NULL)"; } else { $cond[]="(ice_option_id IS NULL)"; }
   if ($sweet!==null){ $cond[]="(sweetness_option_id IS NULL OR sweetness_option_id=?)"; $args[]=$sweet; $score[]="(sweetness_option_id IS NOT NULL)"; } else { $cond[]="(sweetness_option_id IS NULL)"; }
   $scoreExpr=$score? implode(' + ',$score):'0';
-  $sql="SELECT material_id,quantity,unit_id FROM kds_recipe_adjustments
+  $sql="SELECT material_id,quantity,unit_id,step_category FROM kds_recipe_adjustments
         WHERE ".implode(' AND ',$cond)." ORDER BY {$scoreExpr} DESC, id DESC LIMIT 1";
   $st=$pdo->prepare($sql); $st->execute($args); $r=$st->fetch(PDO::FETCH_ASSOC); return $r?:null;
 }
@@ -186,4 +186,5 @@ function get_available_options(PDO $pdo, int $pid, string $p_code): array {
     $options['sweetness_options'] = $stmt_sweet->fetchAll(PDO::FETCH_ASSOC);
 
     return $options;
+}
 }

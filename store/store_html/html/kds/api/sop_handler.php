@@ -1,12 +1,10 @@
 <?php
 /**
- * TopTea · KDS · SOP 查询接口 (V5 - 严格RMS关联校验版)
+ * TopTea · KDS · SOP 查询接口 (V8 - 真正合并动态规则)
  * 修复：
- * - [安全] 严格校验 A, M, T 码。如果提供了 A/M/T 码，该码不仅要在字典表存在，
- * 还必须通过关联表 (pos_item_variants, kds_product_ice_options, kds_product_sweetness_options)
- * 明确关联到该 P-Code (product_id)，否则拒绝查询并返回404。
- * - 完整引入 kds_helper.php 的动态配方调整逻辑 (best_adjust)。
- * - 保持为前端返回 A/M/T 选项名称（用于左侧概览）的逻辑。
+ * - [V7] 移除了冲突的严格关联校验。
+ * - [V8] 彻底重构主流程，使其能正确处理“动态调整规则”中“新增”的物料（例如“海盐”），
+ * 而不仅仅是“覆盖”基础配方中已有的物料。
  */
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
@@ -72,7 +70,7 @@ function get_sweet_names_by_code(PDO $pdo, ?string $code): array {
   return ['sweetness_name_zh'=>$r['zh']??null,'sweetness_name_es'=>$r['es']??null];
 }
 
-/* -------------------- 3) 主流程 -------------------- */
+/* -------------------- 3) 主流程 (V8 逻辑重构) -------------------- */
 try{
   $raw = $_GET['code'] ?? '';
   $seg = parse_code($raw); // 使用 kds_helper.php 的函数
@@ -103,87 +101,81 @@ try{
 
   // 4. (P-A-M-T) 动态计算配方
   
-  // 4a. 将 A,M,T 码转换为 数据库 ID，并进行严格的“存在性”和“关联性”校验
-  
-  $cup_id = null;
-  if ($seg['a'] !== null) {
-      // 4a.1 检查杯型编码是否存在
-      $cup_id = id_by_code($pdo, 'kds_cups', 'cup_code', $seg['a']);
-      if ($cup_id === null) {
-          out_json('error', '杯型编码 (A-code) 无效: ' . htmlspecialchars($seg['a']), null, 404);
-      }
-      // 4a.2 [严格校验] 检查杯型是否已关联到该产品 (通过 pos_item_variants)
-      $stmt = $pdo->prepare("SELECT 1 FROM pos_item_variants WHERE product_id = ? AND cup_id = ? AND deleted_at IS NULL LIMIT 1");
-      $stmt->execute([$pid, $cup_id]);
-      if ($stmt->fetchColumn() === false) {
-          out_json('error', '无效的产品组合：该产品 (P=' . $prod['product_code'] . ') 未配置此杯型 (A=' . $seg['a'] . ')。', null, 404);
-      }
+  // 4a. 将 A,M,T 码转换为 数据库 ID
+  $cup_id = id_by_code($pdo, 'kds_cups', 'cup_code', $seg['a']);
+  if ($seg['a'] !== null && $cup_id === null) {
+      out_json('error', '杯型编码 (A-code) 无效: ' . htmlspecialchars($seg['a']), null, 404);
   }
   
-  $ice_id = null;
-  if ($seg['m'] !== null) {
-      // 4a.3 检查冰量编码是否存在
-      $ice_id = id_by_code($pdo, 'kds_ice_options', 'ice_code', $seg['m']);
-      if ($ice_id === null) {
-          out_json('error', '冰量编码 (M-code) 无效: ' . htmlspecialchars($seg['m']), null, 404);
-      }
-      // 4a.4 [严格校验] 检查冰量是否已关联到该产品 (通过 kds_product_ice_options)
-      $stmt = $pdo->prepare("SELECT 1 FROM kds_product_ice_options WHERE product_id = ? AND ice_option_id = ? LIMIT 1");
-      $stmt->execute([$pid, $ice_id]);
-      if ($stmt->fetchColumn() === false) {
-          out_json('error', '无效的产品组合：该产品 (P=' . $prod['product_code'] . ') 未配置此冰量 (M=' . $seg['m'] . ')。', null, 404);
-      }
+  $ice_id = id_by_code($pdo, 'kds_ice_options', 'ice_code', $seg['m']);
+  if ($seg['m'] !== null && $ice_id === null) {
+      out_json('error', '冰量编码 (M-code) 无效: ' . htmlspecialchars($seg['m']), null, 404);
   }
 
-  $sweet_id = null;
-  if ($seg['t'] !== null) {
-      // 4a.5 检查甜度编码是否存在
-      $sweet_id = id_by_code($pdo, 'kds_sweetness_options', 'sweetness_code', $seg['t']);
-      if ($sweet_id === null) {
-          out_json('error', '甜度编码 (T-code) 无效: ' . htmlspecialchars($seg['t']), null, 404);
-      }
-      // 4a.6 [严格校验] 检查甜度是否已关联到该产品 (通过 kds_product_sweetness_options)
-      $stmt = $pdo->prepare("SELECT 1 FROM kds_product_sweetness_options WHERE product_id = ? AND sweetness_option_id = ? LIMIT 1");
-      $stmt->execute([$pid, $sweet_id]);
-      if ($stmt->fetchColumn() === false) {
-          out_json('error', '无效的产品组合：该产品 (P=' . $prod['product_code'] . ') 未配置此甜度 (T=' . $seg['t'] . ')。', null, 404);
-      }
+  $sweet_id = id_by_code($pdo, 'kds_sweetness_options', 'sweetness_code', $seg['t']);
+  if ($seg['t'] !== null && $sweet_id === null) {
+      out_json('error', '甜度编码 (T-code) 无效: ' . htmlspecialchars($seg['t']), null, 404);
   }
 
-  // 4b. 获取基础配方结构
+  // 4b. V8 核心逻辑：合并基础配方与动态规则
+  
+  // 步骤 1: 获取基础配方，并将其放入一个以 Material ID 为键的 map 中
   $base_recipe_structure = base_recipe($pdo, $pid); // kds_helper
-  if (empty($base_recipe_structure)) {
-      out_json('error', '该产品尚未配置基础配方。', null, 404);
+  $final_recipe_map = [];
+  $base_material_ids = [];
+  foreach ($base_recipe_structure as $r) {
+      $final_recipe_map[(int)$r['material_id']] = $r;
+      $base_material_ids[] = (int)$r['material_id'];
   }
   
-  $adjusted_recipe = [];
-  
-  // 4c. 循环基础配方，应用调整规则
-  foreach ($base_recipe_structure as $r) {
-      $mid = (int)$r['material_id'];
-      $qty = (float)$r['quantity'];
-      $uid = (int)$r['unit_id'];
-      $cat = norm_cat((string)$r['step_category']); // kds_helper
-
-      // 寻找最佳调整
-      $adj = best_adjust($pdo, $pid, $mid, $cup_id, $ice_id, $sweet_id); // kds_helper
-      
+  // 步骤 2: 遍历 map，应用“覆盖”规则
+  foreach ($final_recipe_map as $mid => &$item) {
+      $adj = best_adjust($pdo, $pid, $mid, $cup_id, $ice_id, $sweet_id);
       if ($adj) {
-          $qty = (float)$adj['quantity'];
-          $uid = (int)$adj['unit_id'];
+          $item['quantity'] = (float)$adj['quantity'];
+          $item['unit_id'] = (int)$adj['unit_id'];
+          if (!empty($adj['step_category'])) {
+              $item['step_category'] = $adj['step_category'];
+          }
       }
-      
-      // 获取物料和单位的双语名称
-      $m_names = m_name($pdo, $mid); // kds_helper
-      $u_names = u_name($pdo, $uid); // kds_helper
+  }
+  unset($item); // 解除引用
 
+  // 步骤 3: 查找所有可能“新增”的物料
+  $stmt_new = $pdo->prepare("SELECT DISTINCT material_id FROM kds_recipe_adjustments WHERE product_id = ?");
+  $stmt_new->execute([$pid]);
+  $all_adj_material_ids = $stmt_new->fetchAll(PDO::FETCH_COLUMN);
+  
+  $new_material_ids = array_diff($all_adj_material_ids, $base_material_ids);
+
+  // 步骤 4: 遍历“新增”物料，检查它们的条件是否满足
+  foreach ($new_material_ids as $mid) {
+      $adj = best_adjust($pdo, $pid, $mid, $cup_id, $ice_id, $sweet_id);
+      
+      // 如果 best_adjust 返回了规则，意味着这个“新增”物料在此条件下应当被添加
+      if ($adj) {
+          $final_recipe_map[(int)$mid] = [
+              'material_id'   => (int)$mid,
+              'quantity'      => (float)$adj['quantity'],
+              'unit_id'       => (int)$adj['unit_id'],
+              'step_category' => $adj['step_category'] ?? 'base' // 默认为 base
+          ];
+      }
+  }
+
+  // 步骤 5: 转换最终 map 为双语数组
+  $adjusted_recipe = [];
+  foreach ($final_recipe_map as $item) {
+      $m_names = m_name($pdo, (int)$item['material_id']);
+      $u_names = u_name($pdo, (int)$item['unit_id']);
+      
       $adjusted_recipe[] = [
           'material_zh'   => $m_names['zh'],
           'material_es'   => $m_names['es'],
           'unit_zh'       => $u_names['zh'],
           'unit_es'       => $u_names['es'],
-          'quantity'      => $qty,
-          'step_category' => $cat
+          'quantity'      => (float)$item['quantity'],
+          'step_category' => norm_cat((string)$item['step_category'])
       ];
   }
   

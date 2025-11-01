@@ -1,5 +1,5 @@
 /**
- * TopTea · KDS · SOP (修复版 v5)
+ * TopTea · KDS · SOP (修复版 v7)
  * - 修复：在 fetchSop 的 error/fail 路径中，将 waiting 文本重置为初始状态。
  * - 修复：将 $.ajax.done/fail 中的 alert() 替换为 showKdsAlert(msg, true)。
  * - 修复：根据要求修改右上角提示语 (tip_waiting) 的内容。
@@ -12,6 +12,8 @@
  * - 静态 UI 文案 i18n（不改模板：JS 动态套文案，placeholder / 按钮 / 分组标签 / 等待提示）
  * - 仅左侧精准隐藏旧“请输入编码/--/虚线”提示（不会再让整页变白）
  * - SOP 动态卡片渲染按三分组（底料/调杯/顶料）
+ * - [V6 修复] 调整 renderCards 和 fetchSop 逻辑，以适应新的“等待查询”占位符。
+ * - [V7 修复] 调整 renderLeft 函数，使其正确显示杯型 (cup_name)。
  */
 $(function () {
   "use strict";
@@ -218,8 +220,9 @@ $(function () {
   const $wrapBase = $("#cards-base");
   const $wrapMix = $("#cards-mixing");
   const $wrapTop = $("#cards-topping");
-  const $waiting = $("#cards-waiting");
   const $allWraps = $wrapBase.add($wrapMix).add($wrapTop);
+  // [V6 修复] 获取所有占位符
+  const $allWaitingPlaceholders = $(".kds-waiting-placeholder");
 
   function leftHost() {
     return (
@@ -297,7 +300,7 @@ $(function () {
   /* ========================= 状态 ========================= */
   let DATA = { product: {}, recipe: [] };
 
-  /* ========================= 左侧（编号/名称/状态/冰糖） ========================= */
+  /* ========================= 左侧（V7 修复：显示杯型） ========================= */
   function ensureLeft() {
     const host = leftHost();
     if (!host) return {};
@@ -330,7 +333,7 @@ $(function () {
     if (!l1) {
       l1 = document.createElement("div");
       l1.id = "kds_line1";
-      l1.className = "kds-info-line";
+      l1.className = "kds-info-display"; // 使用 info-display 样式
       l1.style.cssText =
         "background:#f3f4f6;border-radius:10px;padding:10px 12px;margin:8px 0;font-weight:600;";
       name.after(l1);
@@ -342,7 +345,7 @@ $(function () {
     if (!l2) {
       l2 = document.createElement("div");
       l2.id = "kds_line2";
-      l2.className = "kds-info-line";
+      l2.className = "kds-info-display"; // 使用 info-display 样式
       l2.style.cssText =
         "background:#f3f4f6;border-radius:10px;padding:10px 12px;margin:8px 0;font-weight:600;";
       l1.after(l2);
@@ -362,18 +365,23 @@ $(function () {
         pick(p.name_zh, p.name_es) ||
         pick(p.title_zh, p.title_es) ||
         "";
-
-    const statusTxt = pick(p.status_name_zh, p.status_name_es) || "";
+    
+    // [V7 修复] L1 显示杯型
+    const cupTxt = pick(p.cup_name_zh, p.cup_name_es) || "";
     if (nodes.l1) {
-      nodes.l1.style.display = statusTxt ? "" : "none";
-      nodes.l1.textContent = statusTxt;
+      nodes.l1.style.display = cupTxt ? "" : "none";
+      nodes.l1.textContent = cupTxt;
     }
 
+    // [V7 修复] L2 显示 状态 / 冰 / 糖
+    const statusTxt = pick(p.status_name_zh, p.status_name_es) || "";
     const ice = pick(p.ice_name_zh, p.ice_name_es) || "";
     const swt = pick(p.sweetness_name_zh, p.sweetness_name_es) || "";
     const parts = [];
-    if (ice) parts.push(ice);
-    if (swt) parts.push(swt);
+    if (statusTxt) parts.push(statusTxt); // 状态 (例如: 冰沙)
+    if (ice) parts.push(ice);       // 冰量 (例如: 少冰)
+    if (swt) parts.push(swt);       // 甜度 (例如: 少糖)
+    
     if (nodes.l2) {
       nodes.l2.style.display = parts.length ? "" : "none";
       nodes.l2.textContent = parts.join(" / ");
@@ -382,7 +390,7 @@ $(function () {
     removeLegacyHints();
   }
 
-  /* ========================= 卡片渲染 ========================= */
+  /* ========================= 卡片渲染 (V6 修复) ========================= */
   const $tabWraps = {
     base: $wrapBase,
     mixing: $wrapMix,
@@ -411,9 +419,36 @@ $(function () {
       </div>`;
   }
 
+  // [V6 修复] 用于重置所有卡片区域到“等待查询”状态
+  function resetCardContainers() {
+    $allWraps.empty(); // 清空所有卡片
+    $allWraps.each(function() {
+      // 重新添加占位符
+      $(this).html(
+        `<div class="col-12 text-center text-muted pt-5 kds-waiting-placeholder">
+           <h4 data-i18n-key="cards_waiting">${t("cards_waiting")}</h4>
+         </div>`
+      );
+    });
+    // 默认显示第一个 tab
+    showTab("base");
+  }
+
+  // [V6 修复] showTab 逻辑简化
+  function showTab(step) {
+    $(".kds-step-tab").removeClass("active");
+    $(`.kds-step-tab[data-step='${step}']`).addClass("active");
+    $wrapBase.hide();
+    $wrapMix.hide();
+    $wrapTop.hide();
+    // 确保step有效，否则回退到base
+    const $targetWrap = $tabWraps[step] || $wrapBase;
+    $targetWrap.show();
+  }
+  
   function renderCards() {
-    $allWraps.empty();
-    if ($waiting.length) $waiting.hide();
+    // [V6 修复] 先清空所有内容，包括占位符
+    $allWraps.empty(); 
 
     const gp = { base: [], mixing: [], topping: [] };
     (DATA.recipe || []).forEach((r) => gp[normalizeCat(r.step_category)].push(r));
@@ -456,20 +491,23 @@ $(function () {
       $wrapTop.append(cardHTML(i++, name, String(qty), unit));
     });
 
-    // 默认显示有内容的分组
-    function showTab(step) {
-      $(".kds-step-tab").removeClass("active");
-      $(`.kds-step-tab[data-step='${step}']`).addClass("active");
-      $wrapBase.addClass("d-none");
-      $wrapMix.addClass("d-none");
-      $wrapTop.addClass("d-none");
-      $tabWraps[step].removeClass("d-none");
+    // [V6 修复] 如果某个分组没有内容，则显示“等待查询”（或“无内容”）
+    if (gp.base.length === 0) {
+      $wrapBase.html(`<div class="col-12 text-center text-muted pt-5 kds-waiting-placeholder"><h4 data-i18n-key="cards_waiting">${t("cards_waiting")}</h4></div>`);
     }
+    if (gp.mixing.length === 0) {
+      $wrapMix.html(`<div class="col-12 text-center text-muted pt-5 kds-waiting-placeholder"><h4 data-i18n-key="cards_waiting">${t("cards_waiting")}</h4></div>`);
+    }
+    if (gp.topping.length === 0) {
+      $wrapTop.html(`<div class="col-12 text-center text-muted pt-5 kds-waiting-placeholder"><h4 data-i18n-key="cards_waiting">${t("cards_waiting")}</h4></div>`);
+    }
+    
+    // 默认显示有内容的分组
     if (gp.base.length) showTab("base");
     else if (gp.mixing.length) showTab("mixing");
     else if (gp.topping.length) showTab("topping");
     else {
-      if ($waiting.length) $waiting.text(t("cards_waiting")).show(); // 修复：使用 i18n
+      // 如果所有都为空（例如P-Code查询），则全部显示“等待查询”并激活第一个 tab
       showTab("base");
     }
   }
@@ -493,22 +531,20 @@ $(function () {
       .on("click.kdsStep", ".kds-step-tab", function (e) {
         e.preventDefault();
         const step = $(this).data("step");
-        $(".kds-step-tab").removeClass("active");
-        $(this).addClass("active");
-        $wrapBase.addClass("d-none");
-        $wrapMix.addClass("d-none");
-        $wrapTop.addClass("d-none");
-        $tabWraps[step].removeClass("d-none");
+        // [V6 修复] 使用 showTab 函数来切换
+        showTab(step);
       });
   }
 
-  /* ========================= SOP Ajax (修复：使用 showKdsAlert 和 重置waiting) ========================= */
+  /* ========================= SOP Ajax (V6 修复) ========================= */
   function fetchSop(code) {
     if (!code) return;
-    // 修复：使用 'loading' key
-    if ($waiting.length) $waiting.text(t("loading") + " " + esc(code) + "...").show(); 
-    $allWraps.empty();
-
+    // [V6 修复] 设置所有占位符为 "loading"
+    $allWaitingPlaceholders.find('[data-i18n-key]').text(t("loading") + " " + esc(code) + "...");
+    $allWaitingPlaceholders.parent().show(); // 确保占位符可见
+    $allWraps.hide(); // 隐藏卡片容器
+    $tabWraps['base'].show(); // 默认显示第一个
+    
     $.ajax({
       url: "api/sop_handler.php",
       type: "GET",
@@ -518,13 +554,13 @@ $(function () {
       .done(function (res) {
         if (!res || res.status !== "success" || !res.data) {
           const errorMsg = res.message || t("err");
-          // 修复：在显示错误前，重置 waiting 文本
-          if ($waiting.length) $waiting.text(t("cards_waiting")).show(); 
+          // [V6 修复] 在显示错误前，重置 waiting 文本
+          $allWaitingPlaceholders.find('[data-i18n-key]').text(t("cards_waiting"));
           showKdsAlert(errorMsg, true); // 修复：使用 showKdsAlert
           return;
         }
         DATA = { product: res.data.product || {}, recipe: res.data.recipe || [] };
-        if ($waiting.length) $waiting.hide(); // 成功才隐藏
+        // [V6 修复] 成功后 renderAll 会自动处理占位符的隐藏
         renderAll();
       })
       .fail(function (jqXHR, textStatus, errorThrown) {
@@ -532,8 +568,8 @@ $(function () {
         if (jqXHR.responseJSON && jqXHR.responseJSON.message) {
             errorMsg = jqXHR.responseJSON.message;
         }
-        // 修复：在显示错误前，重置 waiting 文本
-        if ($waiting.length) $waiting.text(t("cards_waiting")).show();
+        // [V6 修复] 在显示错误前，重置 waiting 文本
+        $allWaitingPlaceholders.find('[data-i18n-key]').text(t("cards_waiting"));
         showKdsAlert(errorMsg, true); // 修复：使用 showKdsAlert
       });
   }
@@ -549,6 +585,8 @@ $(function () {
   bindTabs();
   renderStaticUI(); // 先把静态 UI 换到当前语言
   removeLegacyHints();
+  // [V6 修复] 初始状态由 HTML 决定，JS不再调用 resetCardContainers
+  // resetCardContainers(); 
 
   // 表单提交 / 回车查询
   if ($form.length) {

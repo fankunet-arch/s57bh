@@ -62,11 +62,20 @@
         </div>
 
         <div id="kds-cards-container">
-            <div id="cards-base" class="row g-4 step-cards"></div>
-            <div id="cards-mixing" class="row g-4 step-cards" style="display: none;"></div>
-            <div id="cards-topping" class="row g-4 step-cards" style="display: none;"></div>
-            <div id="cards-waiting" class="col-12 text-center text-muted pt-5">
-                <h4 data-i18n-key="cards_waiting">等待查询...</h4>
+            <div id="cards-base" class="row g-4 step-cards">
+                <div class="col-12 text-center text-muted pt-5 kds-waiting-placeholder">
+                    <h4 data-i18n-key="cards_waiting">等待查询...</h4>
+                </div>
+            </div>
+            <div id="cards-mixing" class="row g-4 step-cards" style="display: none;">
+                <div class="col-12 text-center text-muted pt-5 kds-waiting-placeholder">
+                    <h4 data-i18n-key="cards_waiting">等待查询...</h4>
+                </div>
+            </div>
+            <div id="cards-topping" class="row g-4 step-cards" style="display: none;">
+                <div class="col-12 text-center text-muted pt-5 kds-waiting-placeholder">
+                    <h4 data-i18n-key="cards_waiting">等待查询...</h4>
+                </div>
             </div>
         </div>
 
