@@ -14,6 +14,7 @@
  * - SOP 动态卡片渲染按三分组（底料/调杯/顶料）
  * - [V6 修复] 调整 renderCards 和 fetchSop 逻辑，以适应新的“等待查询”占位符。
  * - [V7 修复] 调整 renderLeft 函数，使其正确显示杯型 (cup_name)。
+ * - [V8 修复] 调整 cardHTML，将数量和单位合并到 kds-measurement 容器中，实现在同一行显示。
  */
 $(function () {
   "use strict";
@@ -405,6 +406,7 @@ $(function () {
   }
 
   function cardHTML(i, name, qty, unit) {
+    // [V8 修复] 更改HTML结构：合并数量和单位
     return `
       <div class="col-xxl-6 col-xl-6 col-lg-12 col-md-12">
         <div class="kds-ingredient-card">
@@ -413,8 +415,10 @@ $(function () {
           <div class="text-center" style="font-size:1.6rem;font-weight:900;letter-spacing:.6px;">${esc(
             name
           )}</div>
-          <div class="kds-quantity text-center">${esc(qty)}</div>
-          <div class="kds-unit-measure text-center">${esc(unit)}</div>
+          <div class="kds-measurement text-center">
+            <span class="kds-quantity">${esc(qty)}</span>
+            <span class="kds-unit-measure">${esc(unit)}</span>
+          </div>
         </div>
       </div>`;
   }

@@ -1,11 +1,12 @@
 <?php
 /**
- * TopTea · KDS · SOP 查询接口 (V10 - 最终自包含修复版)
+ * TopTea · KDS · SOP 查询接口 (V10.1 - 修复杯型语言)
  *
  * 1. 本文件完全自包含，不再 require_once 'kds_helper.php'，以绕过原助手文件中的致命 Parse Error。
  * 2. 移植了 V8.1 的完整动态配方逻辑 (best_adjust) 和所有依赖函数。
  * 3. 使用 V9.x 的路径逻辑加载 config.php (经 "可通讯文件" 验证有效)。
  * 4. 修复了 get_available_options 中隐藏的 SQL bug (pmi.product_code)。
+ * 5. [BUG FIX] 修复了 get_cup_names 函数，使其查询 sop_description_zh 和 sop_description_es 以支持双语。
  */
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
@@ -49,7 +50,7 @@ function parse_code(string $raw): ?array {
 function id_by_code(PDO $pdo, string $table, string $col, $val): ?int {
   if ($val===null || $val==='') return null;
   $st=$pdo->prepare("SELECT id FROM {$table} WHERE {$col}=? LIMIT 1"); $st->execute([$val]);
-  $id=$st->fetchColumn(); return $id? (int)$id : null;
+  $id=$st->fetchColumn(); return $id? (int)$id: null;
 }
 function get_product(PDO $pdo, string $p): ?array {
   $st=$pdo->prepare("SELECT id,product_code,is_active,is_deleted_flag, status_id FROM kds_products WHERE product_code=? LIMIT 1"); 
@@ -116,14 +117,26 @@ function get_product_info(PDO $pdo, int $pid, int $status_id): array {
     
     return $info;
 }
+
+/**
+ * [BUG FIX] 修复此函数，使其获取双语SOP描述。
+ */
 function get_cup_names(PDO $pdo, ?int $cid): array {
     if ($cid === null) return ['cup_name_zh' => null, 'cup_name_es' => null];
-    $st = $pdo->prepare("SELECT cup_name FROM kds_cups WHERE id = ?");
+    
+    // 修复：同时查询 cup_name (备用) 和 sop_description_zh/es (首选)
+    $st = $pdo->prepare("SELECT cup_name, sop_description_zh, sop_description_es FROM kds_cups WHERE id = ?");
     $st->execute([$cid]);
     $row = $st->fetch(PDO::FETCH_ASSOC);
-    // V10: 简化，SOP 左侧概览仅需 cup_name
-    return ['cup_name_zh' => $row['cup_name'] ?? null, 'cup_name_es' => $row['cup_name'] ?? null];
+    
+    // 修复：优先使用SOP描述，回退到cup_name
+    // 确保返回 'cup_name_zh' 和 'cup_name_es' 键，以匹配主流程的期望
+    return [
+        'cup_name_zh' => $row['sop_description_zh'] ?? $row['cup_name'] ?? null, 
+        'cup_name_es' => $row['sop_description_es'] ?? $row['cup_name'] ?? null
+    ];
 }
+
 function get_ice_names(PDO $pdo, ?int $iid): array {
     if ($iid === null) return ['ice_name_zh' => null, 'ice_name_es' => null];
     $st = $pdo->prepare("SELECT language_code, ice_option_name FROM kds_ice_option_translations WHERE ice_option_id = ?");

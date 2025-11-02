@@ -100,8 +100,29 @@ body{
 .kds-tip{background: #E0F2FE; border:1px solid #7DD3FC;color:#075985;padding:.45rem .7rem;border-radius:.6rem; box-shadow:var(--shadow-sm);font-weight:800;}
 .kds-ingredient-card{position:relative;border-radius:1rem;padding:1.25rem 1rem 1.1rem;text-align:center;background:var(--surface); border:1px solid var(--line);box-shadow:var(--shadow-sm);transition:transform .18s ease, box-shadow .18s ease;min-height:220px;}
 .kds-ingredient-card:hover{box-shadow:var(--shadow-md);transform:translateY(-2px);}
-.kds-quantity{font-size:1.9rem;font-weight:900;color:var(--brand-500);margin-top:.25rem;letter-spacing:.6px;}
-.kds-unit-measure{color:var(--muted-500);font-weight:700;}
+
+/* --- [V8 修复] 替换 kds-quantity 和 kds-unit-measure --- */
+.kds-measurement {
+  margin-top: .25rem; /* This was on .kds-quantity */
+}
+.kds-quantity {
+  display: inline; /* span is inline by default */
+  font-size: 1.9rem;
+  font-weight: 900;
+  color: var(--brand-500);
+  letter-spacing: .6px;
+  vertical-align: baseline; 
+}
+.kds-unit-measure {
+  display: inline;
+  color: var(--muted-500);
+  font-weight: 700;
+  font-size: 1.2rem; /* Make unit a bit bigger */
+  margin-left: 6px; /* Add space */
+  vertical-align: baseline;
+}
+/* --- 结束 [V8 修复] --- */
+
 .kds-side-cp{margin-top: auto; text-align: center; font-size: 12px; line-height: 1.2; color: var(--muted-500); pointer-events: none; white-space: nowrap; padding-top: 1rem;}
 .kds-top-actions .bi{font-size: 1.6rem;color: #fff;opacity: 0.8;transition: opacity 0.2s;vertical-align: middle;}
 .kds-top-actions .bi:hover{opacity: 1;}

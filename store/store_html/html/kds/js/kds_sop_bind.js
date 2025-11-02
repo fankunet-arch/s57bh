@@ -1,5 +1,6 @@
 /* TopTea · KDS — SOP 兜底绑定器（与主脚本同风格渲染）
  * 仅当页面还加载本文件时，提供与 kds_sop.js 一致的 UI 行为与渲染。
+ * [V2 修复] 调整 card，将数量和单位合并到 kds-measurement 容器中，实现在同一行显示。
  */
 (function () {
   if (window.__KDS_SOP_FALLBACK__) return;
@@ -35,14 +36,17 @@
     return 'base';
   }
   function card(i,n,q,u){
+    // [V2 修复] 更改HTML结构：合并数量和单位
     return `
     <div class="col-xxl-6 col-xl-6 col-lg-12 col-md-12">
       <div class="kds-ingredient-card">
         <div class="step-number" style="position:absolute;left:16px;top:16px;background:#16a34a;color:#fff;width:28px;height:28px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-weight:900;">${i}</div>
         <div class="kds-card-thumb" style="width:140px;height:140px;background:#6b7280;border-radius:.8rem;margin:56px auto 8px auto;"></div>
         <div class="text-center" style="font-size:1.6rem;font-weight:900;letter-spacing:.6px;">${esc(n)}</div>
-        <div class="kds-quantity text-center">${esc(q)}</div>
-        <div class="kds-unit-measure text-center">${esc(u)}</div>
+        <div class="kds-measurement text-center">
+          <span class="kds-quantity">${esc(q)}</span>
+          <span class="kds-unit-measure">${esc(u)}</span>
+        </div>
       </div>
     </div>`;
   }
